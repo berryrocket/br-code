@@ -1,6 +1,7 @@
+import time
 from machine import I2C,RTC,Timer,Pin,PWM
-import time, struct, math
-import lps22, icm20948
+import lps22
+import icm20948
 from buzzer import *
 
 ####################
@@ -33,6 +34,14 @@ rtc = RTC()
 accPin = Pin(28, Pin.IN)
 
 ###################
+#### Variables ####
+###################
+# Initialisation des variables
+isSampling = False
+isLaunched = False
+isFalling = False
+
+###################
 #### Fonctions ####
 ###################
 # Initialisation de la carte
@@ -55,24 +64,24 @@ def OuvertureParachute():
 # Main fonction
 if __name__ == '__main__':
     
-    # Initialisation des variables
-    isSampling = False
-    isLaunched = False
-    isFalling = False
+    # # Initialisation des variables
+    # isSampling = False
+    # isLaunched = False
+    # isFalling = False
     tempsMsDebut = time.ticks_ms()
 
     # InitMusic()
     InitBoard()
 
     # Ouvre un fichier pour l'écriture des données
-    filePlatform = open("data_platform.txt","a")
-    fileCu = open("data_cu.txt","a")
+    filePlatform = open("data_platform.txt","a", encoding="utf-8")
+    fileCu = open("data_cu.txt","a", encoding="utf-8")
     
     # Configure le buzzer pour faire un son specifique avant décollage
     SetBuzzer(BUZZER_ENABLE, freq=1000, tps=2)
 
     while True:
-        if isSampling==True:
+        if isSampling == True:
             # Acquisition du temps actuel
             tempsAcq = time.ticks_diff(time.ticks_ms(), tempsMsDebut)/1000 + 1
 
@@ -91,7 +100,7 @@ if __name__ == '__main__':
                 # Acquisition du temps du composant RTC
                 tempsRtc = rtc.datetime()
                 # Ecriture du temps actuel du decollage dans le fichier
-                filePlatform.write("Decollage: {:d}h{:d}m{:d}s{:.0f}\n".format(tempsRtc[4], tempsRtc[5], tempsRtc[6], (tempsAcq % 1)*100))
+                filePlatform.write(f"Decollage: {tempsRtc[4]:d}h{tempsRtc[5]:d}m{tempsRtc[6]:d}s{(tempsAcq % 1)*100:02.0f}\n")
                 filePlatform.write("Temps (s) / Pression (mBar) / temperature (°C) / acc X (g/s^2) / acc Y (g/s^2) / acc Z (g/s^2)\n")
                 # Affichage sur la console
                 print('Decollage !')
@@ -109,7 +118,7 @@ if __name__ == '__main__':
                     # Acquisition du temps du composant RTC
                     tempsRtc = rtc.datetime()
                     # Ecriture du temps actuel du debut de la chute libre dans le fichier
-                    filePlatform.write("Chute libre: {:d}h{:d}m{:d}s{:.0f}\n".format(tempsRtc[4], tempsRtc[5], tempsRtc[6], (tempsAcq % 1)*100))
+                    filePlatform.write(f"Chute libre: {tempsRtc[4]:d}h{tempsRtc[5]:d}m{tempsRtc[6]:d}s{(tempsAcq % 1)*100:02.0f}\n")
                     # Affichage sur la console
                     print('Chute libre !')
 
@@ -120,7 +129,7 @@ if __name__ == '__main__':
             # Si le decollage est passé, on enregistre les données
             if isLaunched == True:
                 # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
-                dataFilePlat = "{:.2f} {:.1f} {:.1f} {:.2f} {:.2f} {:.2f}\n".format(tempsAcq, pressure, temp, ax, ay, az)
+                dataFilePlat = f"{tempsAcq:.2f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f}\n"
                 # Ecriture sur le fichier
                 filePlatform.write(dataFilePlat)
 
@@ -131,8 +140,8 @@ if __name__ == '__main__':
 
                 # Mise en forme des données à écrire sur le fichier
                 # Par exemple: le temps et la température
-                dataCu = "{:.2f} {:.1f}\n".format(tempsAcq, temp)
-            
+                dataCu = f"{tempsAcq:.2f} {temp:.1f}\n"
+
                 # Ecriture des données dans le fichier data_cu.txt
                 fileCu.write(dataCu)
 
@@ -141,14 +150,13 @@ if __name__ == '__main__':
                 ############################################################
 
             # Reinitialisation de l'indicateur pour le timer d'acquisition
-            isSampling = False  
+            isSampling = False
 
-            # Affichage des resultats sur la console 
+            # Affichage des resultats sur la console
             tempsRtc = rtc.datetime()
-            print("\nTime:        {:d}h{:d}m{:d}s / {:.2f}".format(tempsRtc[4], tempsRtc[5], tempsRtc[6], tempsAcq))
-            print('Acceleration:  X = {:.2f} , Y = {:.2f} , Z = {:.2f}'.format(ax, ay, az))  
-            print('Gyroscope:     X = {:.2f} , Y = {:.2f} , Z = {:.2f}'.format(gx, gy, gz))
-            print('Magnetic:      X = {:.2f} , Y = {:.2f} , Z = {:.2f}'.format(mx, my, mz))
-            print('Pressure:      P = {:.2f} hPa'.format(pressure))
-            print('Temperature:   T = {:.2f} °C'.format(temp))
-
+            print(f'\nTime:        {tempsRtc[4]:d}h{tempsRtc[5]:d}m{tempsRtc[6]:d}s / {tempsAcq:.2f}')
+            print(f'Acceleration:  X = {ax:.2f} , Y = {ay:.2f} , Z = {az:.2f}')
+            print(f'Gyroscope:     X = {gx:.2f} , Y = {gy:.2f} , Z = {gz:.2f}')
+            print(f'Magnetic:      X = {mx:.2f} , Y = {my:.2f} , Z = {mz:.2f}')
+            print(f'Pressure:      P = {pressure:.2f} hPa')
+            print(f'Temperature:   T = {temp:.2f} °C')
