@@ -63,7 +63,7 @@ def OuvertureParachute():
 
 # Main fonction
 if __name__ == '__main__':
-    
+
     # # Initialisation des variables
     # isSampling = False
     # isLaunched = False
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     # Ouvre un fichier pour l'écriture des données
     filePlatform = open("data_platform.txt","a", encoding="utf-8")
     fileCu = open("data_cu.txt","a", encoding="utf-8")
-    
+
     # Configure le buzzer pour faire un son specifique avant décollage
     SetBuzzer(BUZZER_ENABLE, freq=1000, tps=2)
 
@@ -104,7 +104,7 @@ if __name__ == '__main__':
                 filePlatform.write("Temps (s) / Pression (mBar) / temperature (°C) / acc X (g/s^2) / acc Y (g/s^2) / acc Z (g/s^2)\n")
                 # Affichage sur la console
                 print('Decollage !')
-            
+
             # Si le decollage est passé et que la chute libre n'est pas encore arrivé
             if (isLaunched == True) and (isFalling == False):
                 # Si l'acceleration est quasi nulle ou négative alors qu'on a décollé c'est qu'on retombe

@@ -286,4 +286,4 @@ class ICM20948:
         self.mag_write(AK09916_CNTL3, 0x01)
         while self.mag_read(AK09916_CNTL3) == 0x01:
             time.sleep(0.0001)
-        self.mag_write(AK09916_CNTL2, 0x02) 
+        self.mag_write(AK09916_CNTL2, 0x02)

@@ -1,5 +1,5 @@
-from machine import Pin,PWM,Timer
 import time
+from machine import Pin,PWM,Timer
 
 # Declaration d'un PWM pour le buzzer
 buzzer = PWM(Pin(18))
@@ -14,7 +14,6 @@ tempsBuzzer = 0
 
 # Initialisation musique
 def InitMusic():
-    global buzzer
     notes = (146.83,164.81,174.61,164.81,130.81,146.83,164.81,174.61,164.81,196.00,155.56,174.61,196.00,155.56,146.83,138.59,164.81)
     notes = tuple(x*2 for x in notes) # Augmente d'une octave la musique
     tempsNotes = (1.5,0.5,0.5,0.5,1,1.5,0.5,0.5,0.5,1,1.5,0.5,1,1,1,2,2)
@@ -29,8 +28,6 @@ def InitMusic():
 
 # Management buzzer
 def MgtBuzzer(timer):
-    global freqBuzzer
-    global buzzer
     buzzer.freq(freqBuzzer)
     buzzer.duty_u16(32768) # Set to 50%
     timerOffBuzzer.init(freq=1.0/0.1, mode=Timer.ONE_SHOT, callback=SetOffBuzzer) # Ring the buzzer for this time (0.1s)
@@ -42,7 +39,6 @@ def SetOffBuzzer(timer):
 def SetBuzzer(enable=True, freq=500, tps=5):
     """Set the buzzer with a frequency and a time between ring"""
     global freqBuzzer
-    global timerBuzzer
     freqBuzzer = freq
     timerBuzzer.deinit()
     if enable == True:
