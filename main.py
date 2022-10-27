@@ -7,9 +7,10 @@ from buzzer import *
 ####################
 #### Constantes ####
 ####################
-ACC_IMU = True
-BUZZER_ENABLE = False
-ACC_THESHOLD = 1
+ACC_IMU = True # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
+BUZZER_ENABLE = False # activation du buzzer
+ACC_THESHOLD = 1 # seuil de l'accélération pour détecter le décollage
+TIMEOUT_FALLING = 8000 # temps après lequel la fusée est en chute libre [ms]
 
 #####################
 #### Declaration ####
@@ -40,6 +41,7 @@ accPin = Pin(28, Pin.IN)
 isSampling = False
 isLaunched = False
 isFalling = False
+tempsDecollage = 0
 
 ###################
 #### Fonctions ####
@@ -64,10 +66,7 @@ def OuvertureParachute():
 # Main fonction
 if __name__ == '__main__':
 
-    # # Initialisation des variables
-    # isSampling = False
-    # isLaunched = False
-    # isFalling = False
+    # Initialisation du temps initial
     tempsMsDebut = time.ticks_ms()
 
     # InitMusic()
@@ -95,6 +94,8 @@ if __name__ == '__main__':
             if ((ay > ACC_THESHOLD and ACC_IMU == True) or (accPin.value() == 0 and ACC_IMU == False)) and (isLaunched == False):
                 # Changement de status de l'indicateur de decollage
                 isLaunched = True
+                # Sauvegarde du temps de décollage
+                tempsDecollage = time.ticks_ms()
                 # Changement du son du buzzer
                 SetBuzzer(BUZZER_ENABLE, freq=1500, tps=1)
                 # Acquisition du temps du composant RTC
@@ -107,8 +108,8 @@ if __name__ == '__main__':
 
             # Si le decollage est passé et que la chute libre n'est pas encore arrivé
             if (isLaunched == True) and (isFalling == False):
-                # Si l'acceleration est quasi nulle ou négative alors qu'on a décollé c'est qu'on retombe
-                if (ay <= 0.2 and ACC_IMU == True) or (accPin.value() == 1 and ACC_IMU == False):
+                # Si le timer de chute libre est dépassé ou que XXX c'est qu'on retombe
+                if (time.ticks_ms()-tempsDecollage > TIMEOUT_FALLING):
                     # Ouverture du parachute
                     # OuvertureParachute()
                     # Changement de status de chute libre
