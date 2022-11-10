@@ -1,5 +1,6 @@
 import time
 from machine import I2C,RTC,Timer,Pin,PWM
+import pyb
 import lps22
 import icm20948
 from buzzer import *
@@ -7,10 +8,13 @@ from buzzer import *
 ####################
 #### Constantes ####
 ####################
-ACC_IMU = True # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
-BUZZER_ENABLE = False # activation du buzzer
-ACC_THESHOLD = 1 # seuil de l'accélération pour détecter le décollage
-TIMEOUT_FALLING = 8000 # temps après lequel la fusée est en chute libre [ms]
+DEPOTAGE        = False # Activation de la version avec depotage (sans trappe parachute)
+ACC_IMU         = True  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
+BUZZER_ENABLE   = False # activation du buzzer
+ACC_THESHOLD    = 1     # seuil de l'accélération pour détecter le décollage [g]
+TIMEOUT_FALLING = 8000  # temps après lequel la fusée passe en mode chute libre [ms]
+SERVO_OPEN      = 800   # [us]
+SERVO_CLOSE     = 1400  # [us]
 
 #####################
 #### Declaration ####
@@ -29,7 +33,10 @@ timerAcq = Timer()
 rtc = RTC()
 
 # Declaration de la pin du parachute
-# parachute = PWM(Pin(XXX))
+if DEPOTAGE == False:
+    portePara = PWM(Pin(XXX))
+    portePara.freq(50) # 50 Hz
+# portePara.calibration(700, 2400, 1510, 2500, 2000) # Min pulse, max pulse, middle pulse, 90 deg pulse, 100 speed
 
 # Declaration de la pin de l'interrupteur d'accélération
 accPin = Pin(28, Pin.IN)
@@ -54,27 +61,44 @@ def InitBoard():
     # Initialisation du timer d'acquisition
     timerAcq.init(freq=10, mode=Timer.PERIODIC, callback=Sampling)
 
+
 # Activation de l'acquisition des données
 def Sampling(timer):
     global isSampling
     isSampling=True
 
+def FermetureParachute():
+    if DEPOTAGE == False:
+        global portePara
+        portePara.duty_ns(SERVO_CLOSE*1000)
+
 def OuvertureParachute():
-    global parachute
-    # parachute.duty_u16(XXX)
+    if DEPOTAGE == False:
+        global portePara
+        portePara.duty_ns(SERVO_OPEN*1000)
 
 # Main fonction
 if __name__ == '__main__':
 
-    # Initialisation du temps initial
-    tempsMsDebut = time.ticks_ms()
+    # Ouvre la trappe parachute au démarrage si besoin
+    OuvertureParachute()
 
-    # InitMusic()
+    # Attente pour placer la trappe parachute si besoin
+    InitMusic()
+    time.sleep(1)
+    
+    # Fermeture de la trappe parachute si besoin
+    FermetureParachute()
+
+    # Initialisation des fonctions d'acquisitions
     InitBoard()
 
     # Ouvre un fichier pour l'écriture des données
     filePlatform = open("data_platform.txt","a", encoding="utf-8")
     fileCu = open("data_cu.txt","a", encoding="utf-8")
+
+    # Initialisation du temps initial
+    tempsMsDebut = time.ticks_ms()
 
     # Configure le buzzer pour faire un son specifique avant décollage
     SetBuzzer(BUZZER_ENABLE, freq=1000, tps=2)
@@ -108,10 +132,10 @@ if __name__ == '__main__':
 
             # Si le decollage est passé et que la chute libre n'est pas encore arrivé
             if (isLaunched == True) and (isFalling == False):
-                # Si le timer de chute libre est dépassé ou que XXX c'est qu'on retombe
+                # Si le timer de chute libre est dépassé
                 if (time.ticks_ms()-tempsDecollage > TIMEOUT_FALLING):
-                    # Ouverture du parachute
-                    # OuvertureParachute()
+                    # Ouverture de la trappe parachute si besoin 
+                    OuvertureParachute()
                     # Changement de status de chute libre
                     isFalling = True
                     # Changement du son du buzzer
