@@ -1,6 +1,5 @@
 import time
 from machine import I2C,RTC,Timer,Pin,PWM
-import pyb
 import lps22
 import icm20948
 from buzzer import *
@@ -10,7 +9,7 @@ from buzzer import *
 ####################
 DEPOTAGE        = False # Activation de la version avec depotage (sans trappe parachute)
 ACC_IMU         = True  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
-BUZZER_ENABLE   = False # activation du buzzer
+BUZZER_ENABLE   = True # activation du buzzer
 ACC_THESHOLD    = 1     # seuil de l'accélération pour détecter le décollage [g]
 TIMEOUT_FALLING = 8000  # temps après lequel la fusée passe en mode chute libre [ms]
 SERVO_OPEN      = 800   # [us]
@@ -34,7 +33,7 @@ rtc = RTC()
 
 # Declaration de la pin du parachute
 if DEPOTAGE == False:
-    portePara = PWM(Pin(XXX))
+    portePara = PWM(Pin(10, Pin.OUT))
     portePara.freq(50) # 50 Hz
 # portePara.calibration(700, 2400, 1510, 2500, 2000) # Min pulse, max pulse, middle pulse, 90 deg pulse, 100 speed
 
@@ -84,8 +83,8 @@ if __name__ == '__main__':
     OuvertureParachute()
 
     # Attente pour placer la trappe parachute si besoin
-    InitMusic()
-    time.sleep(1)
+    InitMusic(BUZZER_ENABLE)
+    time.sleep(3)
     
     # Fermeture de la trappe parachute si besoin
     FermetureParachute()

@@ -13,16 +13,17 @@ freqBuzzer  = 500
 tempsBuzzer = 0
 
 # Initialisation musique
-def InitMusic():
+def InitMusic(enable=True):
     notes = (146.83,164.81,174.61,164.81,130.81,146.83,164.81,174.61,164.81,196.00,155.56,174.61,196.00,155.56,146.83,138.59,164.81)
     notes = tuple(x*2 for x in notes) # Augmente d'une octave la musique
     tempsNotes = (1.5,0.5,0.5,0.5,1,1.5,0.5,0.5,0.5,1,1.5,0.5,1,1,1,2,2)
     bpm = 75
-    buzzer.duty_u16(0) # Set to 0%
-    buzzer.duty_u16(32768) # Set to 50%
-    for iNote in range(0, len(notes)):
-        buzzer.freq(round(notes[iNote]))
-        time.sleep((60.0/bpm)*tempsNotes[iNote])
+    if enable == True:
+        buzzer.duty_u16(0) # Set to 0%
+        buzzer.duty_u16(32768) # Set to 50%
+        for iNote in range(0, len(notes)):
+            buzzer.freq(round(notes[iNote]))
+            time.sleep((60.0/bpm)*tempsNotes[iNote])
 
     buzzer.duty_u16(0) # Set to 0%
 
