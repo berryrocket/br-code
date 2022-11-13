@@ -33,7 +33,7 @@ rtc = RTC()
 
 # Declaration de la pin du parachute
 portePara = 0
-if DEPOTAGE == False:
+if DEPOTAGE is False:
     portePara = PWM(Pin(10, Pin.OUT))
     portePara.freq(50) # 50 Hz
 # portePara.calibration(700, 2400, 1510, 2500, 2000) # Min pulse, max pulse, middle pulse, 90 deg pulse, 100 speed
@@ -68,12 +68,12 @@ def Sampling(timer):
     isSampling=True
 
 def FermetureParachute():
-    if DEPOTAGE == False:
+    if DEPOTAGE is False:
         global portePara
         portePara.duty_ns(SERVO_CLOSE*1000)
 
 def OuvertureParachute():
-    if DEPOTAGE == False:
+    if DEPOTAGE is False:
         global portePara
         portePara.duty_ns(SERVO_OPEN*1000)
 
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     SetBuzzer(BUZZER_ENABLE, freq=1000, tps=2)
 
     while True:
-        if isSampling == True:
+        if isSampling is True:
             # Acquisition du temps actuel
             tempsAcq = time.ticks_diff(time.ticks_ms(), tempsMsDebut)/1000 + 1
 
