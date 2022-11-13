@@ -32,6 +32,7 @@ timerAcq = Timer()
 rtc = RTC()
 
 # Declaration de la pin du parachute
+portePara = 0
 if DEPOTAGE == False:
     portePara = PWM(Pin(10, Pin.OUT))
     portePara.freq(50) # 50 Hz
@@ -114,7 +115,7 @@ if __name__ == '__main__':
             temp = lps22.read_temperature()
 
             # Si l'acceleration dépasse le seuil ou que la pin d'accélération est appuyée, et que le décollage n'est pas encore arrivé, il y a eu décollage
-            if ((ay > ACC_THESHOLD and ACC_IMU == True) or (accPin.value() == 0 and ACC_IMU == False)) and (isLaunched == False):
+            if ((ay > ACC_THESHOLD and ACC_IMU is True) or (accPin.value() == 0 and ACC_IMU is False)) and (isLaunched is False):
                 # Changement de status de l'indicateur de decollage
                 isLaunched = True
                 # Sauvegarde du temps de décollage
@@ -130,7 +131,7 @@ if __name__ == '__main__':
                 print('Decollage !')
 
             # Si le decollage est passé et que la chute libre n'est pas encore arrivé
-            if (isLaunched == True) and (isFalling == False):
+            if (isLaunched is True) and (isFalling is False):
                 # Si le timer de chute libre est dépassé
                 if (time.ticks_ms()-tempsDecollage > TIMEOUT_FALLING):
                     # Ouverture de la trappe parachute si besoin 
@@ -147,11 +148,11 @@ if __name__ == '__main__':
                     print('Chute libre !')
 
             # Si la fusee est en chute libre
-            # if isFalling == True:
+            # if isFalling is True:
                 # isLaunched = False
 
             # Si le decollage est passé, on enregistre les données
-            if isLaunched == True:
+            if isLaunched is True:
                 # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
                 dataFilePlat = f"{tempsAcq:.2f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f}\n"
                 # Ecriture sur le fichier

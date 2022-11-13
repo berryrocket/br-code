@@ -18,7 +18,7 @@ def InitMusic(enable=True):
     notes = tuple(x*2 for x in notes) # Augmente d'une octave la musique
     tempsNotes = (1.5,0.5,0.5,0.5,1,1.5,0.5,0.5,0.5,1,1.5,0.5,1,1,1,2,2)
     bpm = 75
-    if enable == True:
+    if enable is True:
         buzzer.duty_u16(0) # Set to 0%
         buzzer.duty_u16(32768) # Set to 50%
         for iNote in range(0, len(notes)):
@@ -42,5 +42,5 @@ def SetBuzzer(enable=True, freq=500, tps=5):
     global freqBuzzer
     freqBuzzer = freq
     timerBuzzer.deinit()
-    if enable == True:
+    if enable is True:
         timerBuzzer.init(freq=1.0/tps, mode=Timer.PERIODIC, callback=MgtBuzzer)
