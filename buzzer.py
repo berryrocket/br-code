@@ -33,11 +33,11 @@ def MgtBuzzer(timer):
     buzzer.duty_u16(32768) # Set to 50%
     timerOffBuzzer.init(freq=1.0/0.1, mode=Timer.ONE_SHOT, callback=SetOffBuzzer) # Ring the buzzer for this time (0.1s)
 
-def SetOffBuzzer(timer):
+def SetOffBuzzer():
     buzzer.duty_u16(0) # Set to 0%
 
 # Mets en marche le buzzer pour la fréquence et la période indiquées
-def SetBuzzer(enable=True, freq=500, tps=5):
+def SetBuzzer(enable=True, freq=500, tps=5.0):
     """Set the buzzer with a frequency and a time between ring"""
     global freqBuzzer
     freqBuzzer = freq
