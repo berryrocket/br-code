@@ -207,10 +207,10 @@ class ICM20948:
     def set_accelerometer_low_pass(self, enabled=True, mode=5):
         """Configure the accelerometer low pass filter."""
         self.bank(2)
-        value = self.read(ICM20948_ACCEL_CONFIG) & 0b10001110
+        value = self.read(ICM20948_ACCEL_CONFIG) & 0b11000110
         if enabled:
             value |= 0b1
-        value |= (mode & 0x07) << 4
+        value |= (mode & 0x07) << 3
         self.write(ICM20948_ACCEL_CONFIG, value)
 
     def set_gyro_sample_rate(self, rate=125):
@@ -230,10 +230,10 @@ class ICM20948:
     def set_gyro_low_pass(self, enabled=True, mode=5):
         """Configure the gyro low pass filter."""
         self.bank(2)
-        value = self.read(ICM20948_GYRO_CONFIG_1) & 0b10001110
+        value = self.read(ICM20948_GYRO_CONFIG_1) & 0b11000110
         if enabled:
             value |= 0b1
-        value |= (mode & 0x07) << 4
+        value |= (mode & 0x07) << 3
         self.write(ICM20948_GYRO_CONFIG_1, value)
 
     def read_temperature(self):

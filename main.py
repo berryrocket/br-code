@@ -1,3 +1,8 @@
+# Berryrocket project
+# On-board code
+# Licence CC-BY-NC-SA
+# Louis Barbier
+
 import time
 from machine import I2C,RTC,Timer,Pin,PWM
 import lps22
@@ -67,12 +72,31 @@ def InitBoard():
     # Initialisation du timer d'acquisition
     timerAcq.init(freq=FREQ_ACQ, mode=Timer.PERIODIC, callback=Sampling)
 
+def InitPlatFile():
+    filePlatform = open("data_platform.txt","a", encoding="utf-8")
+    filePlatform.write(f"########\n")
+    filePlatform.write(f"## Version soft : v1.0\n")
+    filePlatform.write(f"## Type fusée : ")
+    if (DEPOTAGE is True):
+        filePlatform.write(f"Depotage\n")
+    else:
+        filePlatform.write(f"Trappe parachute\n")
+    filePlatform.write(f"## Détection décollage : ")
+    if (ACC_IMU is True):
+        filePlatform.write(f"IMU mems (icm20948)\n")
+    else:
+        filePlatform.write(f"Accélero contact\n")
+    filePlatform.write(f"## Fenetrage temporel : {TIMEOUT_FALLING:d} ms\n")
+    filePlatform.write(f"## Frequence acq données: {FREQ_ACQ:d} Hz\n")
+    filePlatform.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g]\n")
+    filePlatform.close()
+
 
 # Activation de l'acquisition des données
 def Sampling(timer):
     global isSampling
-    if isSampling is False:
-        isSampling = True
+    # if isSampling is False:
+    isSampling = True
 
 def FermetureParachute():
     if DEPOTAGE is False:
@@ -110,9 +134,9 @@ if __name__ == '__main__':
     InitBoard()
 
     # Ouvre un fichier pour l'écriture des données
-    filePlatform = open("data_platform.txt","a", encoding="utf-8")
-    fileCu = open("data_cu.txt","a", encoding="utf-8")
+    InitPlatFile()
     dataFilePlatBuff = []
+    fileCu = open("data_cu.txt","a", encoding="utf-8")
 
     # Initialisation du temps initial
     tempsMsDebut = time.ticks_ms()
@@ -130,20 +154,19 @@ if __name__ == '__main__':
 
             # Acquisitions des capteurs
             ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro_data()
-            mx, my, mz = imu.read_magnetometer_data()
+            # mx, my, mz = imu.read_magnetometer_data()
             pressure = lps22.read_pressure()
             temp = lps22.read_temperature()
-
+            accContact = True
+            ACC_IMU = True
             # Si l'acceleration dépasse le seuil ou que la pin d'accélération est appuyée, et que le décollage n'est pas encore arrivé, il y a eu décollage
-            if ((ay > ACC_THESHOLD and ACC_IMU is True) or (accContact is True and ACC_IMU is False)) and (isLaunched is False):
+            if ((ay < -1-ACC_THESHOLD and ACC_IMU is True) or (accContact is True and ACC_IMU is False)) and (isLaunched is False):
                 # Changement de status de l'indicateur de decollage
                 isLaunched = True
                 # Sauvegarde du temps de décollage
                 tempsDecollage = time.ticks_ms()
                 # Changement du son du buzzer
                 SetBuzzer(BUZZER_ENABLE, freq=1500, tps=1)
-                # Ecriture du temps actuel du decollage dans le fichier
-                filePlatform.write("# Temps (s) / Pression (mBar) / temperature (°C) / acc X (g/s^2) / acc Y (g/s^2) / acc Z (g/s^2)\n")
                 if DEBUG is True:
                     # Affichage sur la console
                     print('Decollage !')
@@ -159,26 +182,43 @@ if __name__ == '__main__':
                     # Changement du son du buzzer
                     SetBuzzer(BUZZER_ENABLE, freq=2000, tps=0.5)
                     # Ecriture du temps actuel du debut de la chute libre dans le fichier
-                    filePlatform.write(f"# Chute libre: {tempsAcq:.2f}s\n")
+                    filePlatform = open("data_platform.txt","a", encoding="utf-8")
+                    filePlatform.write(f"# Chute libre: {tempsAcq:.3f}s\n")
+                    filePlatform.close()
                     if DEBUG is True:
                         # Affichage sur la console
                         print('Chute libre !')
+            
+            # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
+            dataFilePlat = f"{tempsAcq:.3f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f}\n"
 
             # Si le decollage est passé, on enregistre les données
             if isLaunched is True:
-                # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
-                dataFilePlat = f"{tempsAcq:.2f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f}\n"
                 # Ecriture sur le fichier
+                filePlatform = open("data_platform.txt","a", encoding="utf-8")
                 if (len(dataFilePlatBuff) > 0):
                     for dataEl in dataFilePlatBuff:
                         filePlatform.write(dataEl)
                     dataFilePlatBuff = []
-                    filePlatform.write(f"# Decollage: {tempsAcq:.2f}s\n")
+                    filePlatform.write(f"# Decollage: {tempsAcq:.3f}s\n")
                 filePlatform.write(dataFilePlat)
+                filePlatform.close()
+
+
+                # if (len(dataFilePlatBuff) > 1):
+                #     filePlatform.write(dataFilePlatBuff.pop(0))
+                #     filePlatform.write(dataFilePlatBuff.pop(0))
+                #     dataFilePlatBuff.append(dataFilePlat)
+                # elif (len(dataFilePlatBuff) > 0):
+                #     filePlatform.write(dataFilePlatBuff.pop(0))
+                #     filePlatform.write(f"# Decollage: {tempsAcq:.3f}s\n")
+                #     filePlatform.write(dataFilePlat)
+                # else:
+                #     filePlatform.write(dataFilePlat)
 
                 ############################################################
                 ########## Mettre ici le code de la charge utile  ##########
-                ########## qui va se dérouler après le décollage  ##########
+                ########## qui va se dérouler APRES le décollage  ##########
                 ############################################################
 
                 # Mise en forme des données à écrire sur le fichier
@@ -196,9 +236,20 @@ if __name__ == '__main__':
                 ############################################################
             else:
                 # Garde les données sur 1/2 seconde avant le décollage
-                dataFilePlatBuff.append(f"{tempsAcq:.2f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f}\n")
+                dataFilePlatBuff.append(dataFilePlat)
                 if (len(dataFilePlatBuff) > FREQ_ACQ/2):
                     del dataFilePlatBuff[0]
+
+                ############################################################
+                ########## Mettre ici le code de la charge utile  ##########
+                ########## qui va se dérouler AVANT le décollage  ##########
+                ############################################################
+
+                # ICI
+
+                ############################################################
+                ########## Fin du code de la charge utile         ##########
+                ############################################################
 
             # Reinitialisation de l'indicateur pour le timer d'acquisition
             isSampling = False
