@@ -12,12 +12,12 @@ from buzzer import *
 ####################
 #### Constantes ####
 ####################
-DEPOTAGE        = True  # activation de la version avec depotage (sans trappe parachute)
-ACC_IMU         = True  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
+DEPOTAGE        = False  # activation de la version avec depotage (sans trappe parachute)
+ACC_IMU         = False  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
 BUZZER_ENABLE   = True  # activation du buzzer
 ACC_THESHOLD    = 1     # seuil de l'accélération pour détecter le décollage [g]
 TIMEOUT_FALLING = 7200  # temps après lequel la fusée passe en mode chute libre [ms]
-FREQ_ACQ        = 30    # Frequence d'acquisition des données [Hz]
+FREQ_ACQ        = 20    # Frequence d'acquisition des données [Hz]
 SERVO_OPEN      = 800   # [us]
 SERVO_CLOSE     = 1400  # [us]
 DEBUG           = False
@@ -91,11 +91,10 @@ def InitPlatFile():
     filePlatform.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g]\n")
     filePlatform.close()
 
-
 # Activation de l'acquisition des données
 def Sampling(timer):
     global isSampling
-    # if isSampling is False:
+    #if isSampling is False:
     isSampling = True
 
 def FermetureParachute():
@@ -157,8 +156,7 @@ if __name__ == '__main__':
             # mx, my, mz = imu.read_magnetometer_data()
             pressure = lps22.read_pressure()
             temp = lps22.read_temperature()
-            accContact = True
-            ACC_IMU = True
+
             # Si l'acceleration dépasse le seuil ou que la pin d'accélération est appuyée, et que le décollage n'est pas encore arrivé, il y a eu décollage
             if ((ay < -1-ACC_THESHOLD and ACC_IMU is True) or (accContact is True and ACC_IMU is False)) and (isLaunched is False):
                 # Changement de status de l'indicateur de decollage
@@ -260,7 +258,7 @@ if __name__ == '__main__':
                 print(f'\nTime:        {tempsRtc[4]:d}h{tempsRtc[5]:d}m{tempsRtc[6]:d}s / {tempsAcq:.2f}')
                 print(f'Acceleration:  X = {ax:.2f} , Y = {ay:.2f} , Z = {az:.2f}')
                 print(f'Gyroscope:     X = {gx:.2f} , Y = {gy:.2f} , Z = {gz:.2f}')
-                print(f'Magnetic:      X = {mx:.2f} , Y = {my:.2f} , Z = {mz:.2f}')
+                # print(f'Magnetic:      X = {mx:.2f} , Y = {my:.2f} , Z = {mz:.2f}')
                 print(f'Pressure:      P = {pressure:.2f} hPa')
                 print(f'Temperature:   T = {temp:.2f} °C')
                 print(f'Acc contact:   {accContact:.1d}')
