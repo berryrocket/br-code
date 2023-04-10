@@ -8,6 +8,7 @@ import os
 from machine import I2C,RTC,Timer,Pin,PWM
 import lps22
 import icm20948
+from cu import *
 from buzzer import *
 
 ####################
@@ -22,7 +23,7 @@ FREQ_ACQ        = 30    # Frequence d'acquisition des données [Hz]
 SERVO_OPEN      = 800   # [us]
 SERVO_CLOSE     = 1800  # [us]
 DEBUG           = False
-SOFT_VERSION    = "1.1"
+SOFT_VERSION    = "1.2"
 
 #####################
 #### Declaration ####
@@ -31,7 +32,7 @@ SOFT_VERSION    = "1.1"
 i2c = I2C(1,freq=400000)  # default assignment: scl=Pin(7), sda=Pin(6)
 
 # Declaration des capteurs
-lps22 = lps22.LPS22HB(i2c)
+baro = lps22.LPS22HB(i2c)
 imu = icm20948.ICM20948(i2c_bus=i2c)
 
 # Declaration du timer
@@ -86,7 +87,7 @@ def InitPlatFile():
 
     filePlatform = open(dataFolder+"data_platform.txt","a", encoding="utf-8")
     filePlatform.write(f"########\n")
-    filePlatform.write(f"## Version soft : v1.0\n")
+    filePlatform.write(f"## Version soft : v{SOFT_VERSION:s}\n")
     filePlatform.write(f"## Type fusée : ")
     if (DEPOTAGE is True):
         filePlatform.write(f"Depotage\n")
@@ -147,6 +148,9 @@ if __name__ == '__main__':
     InitPlatFile()
     dataFilePlatBuff = []
 
+    # Exécute les actions de la charge utile au démarrage de la carte
+    CU_Initialisation(baro, imu)
+
     # Initialisation du temps initial
     tempsMsDebut = time.ticks_ms()
 
@@ -159,13 +163,13 @@ if __name__ == '__main__':
     while True:
         if isSampling is True:
             # Acquisition du temps actuel
-            tempsAcq = time.ticks_diff(time.ticks_ms(), tempsMsDebut)/1000 + 1
+            tempsAcq = time.ticks_diff(time.ticks_ms(), tempsMsDebut)/1000.0
 
             # Acquisitions des capteurs
             ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro_data()
             # mx, my, mz = imu.read_magnetometer_data()
-            pressure = lps22.read_pressure()
-            temp = lps22.read_temperature()
+            pressure = baro.read_pressure()
+            temp = baro.read_temperature()
 
             # Si l'acceleration dépasse le seuil ou que la pin d'accélération est appuyée, et que le décollage n'est pas encore arrivé, il y a eu décollage
             if ((ay < -1-ACC_THESHOLD and ACC_IMU is True) or (accContact is True and ACC_IMU is False)) and (isLaunched is False):
@@ -200,9 +204,18 @@ if __name__ == '__main__':
             # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
             dataFilePlat = f"{tempsAcq:.3f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f}\n"
 
-            # Si le decollage est passé, on enregistre les données
-            if isLaunched is True:
+            # Si le decollage n'a pas encore eu lieu
+            if isLaunched is False:
+                # Garde les données sur 1/2 seconde avant le décollage
+                dataFilePlatBuff.append(dataFilePlat)
+                if (len(dataFilePlatBuff) > FREQ_ACQ/2):
+                    del dataFilePlatBuff[0]
 
+                # Exécute les actions de la charge utile avant décollage
+                CU_AvantDecollage(tempsAcq, baro, imu)
+
+            # Si le decollage a eu lieu
+            else:
                 if saveData is False:
                     # Sauvegarde RAM avant écriture
                     dataFilePlatBuff.append(dataFilePlat)
@@ -221,54 +234,13 @@ if __name__ == '__main__':
                     filePlatform.close()
                     saveData = False
 
+                # Exécute les actions de la charge utile après décollage
+                CU_ApresDecollage(tempsAcq, baro, imu)
 
-                # if (len(dataFilePlatBuff) > 1):
-                #     filePlatform.write(dataFilePlatBuff.pop(0))
-                #     filePlatform.write(dataFilePlatBuff.pop(0))
-                #     dataFilePlatBuff.append(dataFilePlat)
-                # elif (len(dataFilePlatBuff) > 0):
-                #     filePlatform.write(dataFilePlatBuff.pop(0))
-                #     filePlatform.write(f"# Decollage: {tempsAcq:.3f}s\n")
-                #     filePlatform.write(dataFilePlat)
-                # else:
-                #     filePlatform.write(dataFilePlat)
-
-                ############################################################
-                ########## Mettre ici le code de la charge utile  ##########
-                ########## qui va se dérouler APRES le décollage  ##########
-                ############################################################
-
-                # Mise en forme des données à écrire sur le fichier
-                # Par exemple: le temps et la température
-                # dataCu = f"{tempsAcq:.2f} {temp:.1f}\n"
-
-                # Ecriture des données dans le fichier data_cu.txt
-                # fileCu = open(dataFolder+"data_cu.txt","a", encoding="utf-8")
-                # fileCu.write(dataCu)
-                # fileCu.close()
-
-                # Si la fusee est en chute libre
-                # if isFalling is True:
-
-                ############################################################
-                ########## Fin du code de la charge utile         ##########
-                ############################################################
-            else:
-                # Garde les données sur 1/2 seconde avant le décollage
-                dataFilePlatBuff.append(dataFilePlat)
-                if (len(dataFilePlatBuff) > FREQ_ACQ/2):
-                    del dataFilePlatBuff[0]
-
-                ############################################################
-                ########## Mettre ici le code de la charge utile  ##########
-                ########## qui va se dérouler AVANT le décollage  ##########
-                ############################################################
-
-                # ICI
-
-                ############################################################
-                ########## Fin du code de la charge utile         ##########
-                ############################################################
+            # Si la fusée est en chute libre
+            if isFalling is True:
+                # Exécute les actions de la charge utile prendant la redescente
+                CU_Redescente(tempsAcq, baro, imu)
 
             # Reinitialisation de l'indicateur pour le timer d'acquisition
             isSampling = False

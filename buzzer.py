@@ -1,3 +1,8 @@
+# Berryrocket project
+# Buzzer management
+# Licence CC-BY-NC-SA
+# Louis Barbier
+
 import time
 from machine import Pin,PWM,Timer
 
