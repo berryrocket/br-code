@@ -4,6 +4,7 @@
 # Louis Barbier
 
 import time
+import os
 from machine import I2C,RTC,Timer,Pin,PWM
 import lps22
 import icm20948
@@ -12,15 +13,16 @@ from buzzer import *
 ####################
 #### Constantes ####
 ####################
-DEPOTAGE        = False  # activation de la version avec depotage (sans trappe parachute)
+DEPOTAGE        = True  # activation de la version avec depotage (sans trappe parachute)
 ACC_IMU         = False  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
-BUZZER_ENABLE   = True  # activation du buzzer
+BUZZER_ENABLE   = False  # activation du buzzer
 ACC_THESHOLD    = 1     # seuil de l'accélération pour détecter le décollage [g]
 TIMEOUT_FALLING = 7200  # temps après lequel la fusée passe en mode chute libre [ms]
-FREQ_ACQ        = 20    # Frequence d'acquisition des données [Hz]
+FREQ_ACQ        = 30    # Frequence d'acquisition des données [Hz]
 SERVO_OPEN      = 800   # [us]
-SERVO_CLOSE     = 1400  # [us]
+SERVO_CLOSE     = 1800  # [us]
 DEBUG           = False
+SOFT_VERSION    = "1.1"
 
 #####################
 #### Declaration ####
@@ -48,6 +50,10 @@ if DEPOTAGE is False:
 # Declaration de la pin de l'interrupteur d'accélération
 accPin = Pin(28, Pin.IN)
 
+# Dossier des données
+dataFolderName = 'data'
+dataFolder = dataFolderName+'/'
+
 ###################
 #### Variables ####
 ###################
@@ -57,6 +63,8 @@ isLaunched      = False
 isFalling       = False
 accContact      = False
 tempsDecollage  = 0
+saveData        = True
+saveDataFirst   = True
 
 ###################
 #### Fonctions ####
@@ -73,7 +81,10 @@ def InitBoard():
     timerAcq.init(freq=FREQ_ACQ, mode=Timer.PERIODIC, callback=Sampling)
 
 def InitPlatFile():
-    filePlatform = open("data_platform.txt","a", encoding="utf-8")
+    if dataFolderName not in os.listdir():
+        os.mkdir(dataFolderName)
+
+    filePlatform = open(dataFolder+"data_platform.txt","a", encoding="utf-8")
     filePlatform.write(f"########\n")
     filePlatform.write(f"## Version soft : v1.0\n")
     filePlatform.write(f"## Type fusée : ")
@@ -135,7 +146,6 @@ if __name__ == '__main__':
     # Ouvre un fichier pour l'écriture des données
     InitPlatFile()
     dataFilePlatBuff = []
-    fileCu = open("data_cu.txt","a", encoding="utf-8")
 
     # Initialisation du temps initial
     tempsMsDebut = time.ticks_ms()
@@ -180,7 +190,7 @@ if __name__ == '__main__':
                     # Changement du son du buzzer
                     SetBuzzer(BUZZER_ENABLE, freq=2000, tps=0.5)
                     # Ecriture du temps actuel du debut de la chute libre dans le fichier
-                    filePlatform = open("data_platform.txt","a", encoding="utf-8")
+                    filePlatform = open(dataFolder+"data_platform.txt","a", encoding="utf-8")
                     filePlatform.write(f"# Chute libre: {tempsAcq:.3f}s\n")
                     filePlatform.close()
                     if DEBUG is True:
@@ -192,15 +202,24 @@ if __name__ == '__main__':
 
             # Si le decollage est passé, on enregistre les données
             if isLaunched is True:
-                # Ecriture sur le fichier
-                filePlatform = open("data_platform.txt","a", encoding="utf-8")
-                if (len(dataFilePlatBuff) > 0):
+
+                if saveData is False:
+                    # Sauvegarde RAM avant écriture
+                    dataFilePlatBuff.append(dataFilePlat)
+                    if (len(dataFilePlatBuff) >= FREQ_ACQ/2):
+                        saveData = True
+                elif saveData is True:
+                    # Ecriture sur le fichier de plusieurs points de mesure
+                    filePlatform = open(dataFolder+"data_platform.txt","a", encoding="utf-8")
                     for dataEl in dataFilePlatBuff:
                         filePlatform.write(dataEl)
                     dataFilePlatBuff = []
-                    filePlatform.write(f"# Decollage: {tempsAcq:.3f}s\n")
-                filePlatform.write(dataFilePlat)
-                filePlatform.close()
+                    if saveDataFirst is True:
+                        filePlatform.write(f"# Decollage: {tempsAcq:.3f}s\n")
+                        saveDataFirst = False
+                    filePlatform.write(dataFilePlat)
+                    filePlatform.close()
+                    saveData = False
 
 
                 # if (len(dataFilePlatBuff) > 1):
@@ -224,7 +243,9 @@ if __name__ == '__main__':
                 # dataCu = f"{tempsAcq:.2f} {temp:.1f}\n"
 
                 # Ecriture des données dans le fichier data_cu.txt
+                # fileCu = open(dataFolder+"data_cu.txt","a", encoding="utf-8")
                 # fileCu.write(dataCu)
+                # fileCu.close()
 
                 # Si la fusee est en chute libre
                 # if isFalling is True:
