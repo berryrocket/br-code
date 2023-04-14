@@ -16,7 +16,7 @@ from buzzer import *
 ####################
 DEPOTAGE        = True  # activation de la version avec depotage (sans trappe parachute)
 ACC_IMU         = False  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
-BUZZER_ENABLE   = False  # activation du buzzer
+BUZZER_ENABLE   = True  # activation du buzzer
 ACC_THESHOLD    = 1     # seuil de l'accélération pour détecter le décollage [g]
 TIMEOUT_FALLING = 7200  # temps après lequel la fusée passe en mode chute libre [ms]
 FREQ_ACQ        = 30    # Frequence d'acquisition des données [Hz]
@@ -127,9 +127,9 @@ def IrqAcc(p):
 if __name__ == '__main__':
 
     # Début initialisation avec son specific
-    # SetBuzzer(BUZZER_ENABLE, freq=800, tps=0.2)
-    # time.sleep(0.2)
-    # SetOffBuzzer()
+    SetBuzzer(BUZZER_ENABLE, freq=800, tps=0.2)
+    time.sleep(0.2)
+    SetBuzzer(False)
 
     # Ouvre la trappe parachute au démarrage si besoin
     OuvertureParachute()
