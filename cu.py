@@ -55,8 +55,6 @@ def CU_ApresDecollage(temps, baro, imu):
 # Exécute les actions de la charge utile prendant la redescente
 def CU_Redescente(temps, baro, imu):
     """Exécute les actions de la charge utile prendant la redescente"""
-    print(temps)
-    print(baro.read_temperature())
     ############################################################
     ########## Mettre ici le code de la charge utile  ##########
     ########## qui va se dérouler PENDANT la redescente ########
