@@ -8,8 +8,6 @@ Berryrocket code is in charge of several functions :
 - Acquire and store data from platform sensor : acceleration, angular speed, pressure, ...
 - Manage the payload (if needed) : do the experience and store data (can be customized)
 
-The code is under CC BY-NC-SA licence which means that anyone can 
-
 ## File organisation
 - main.py : contains rocket sequencer and payload code
 - lps22.py : contains pressure sensor interface code
