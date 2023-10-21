@@ -156,7 +156,7 @@ class ICM20948:
 
         return x, y, z
 
-    def read_accelerometer_gyro_data(self):
+    def read_accelerometer_gyro(self):
         self.bank(0)
         data = self.read_bytes(ICM20948_ACCEL_XOUT_H, 12)
 

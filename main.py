@@ -1,13 +1,17 @@
-# Berryrocket project
+########################################
+#### BerryRocket ####
 # On-board code
-# Licence CC-BY-NC-SA
 # Louis Barbier
+# Licence CC-BY-NC-SA
+########################################
 
 import time
 import os
 from machine import I2C,RTC,Timer,Pin,PWM
-import lps22
-import icm20948
+from lib.lps22hb import LPS22HB
+from lib.icm20948 import ICM20948
+from lib.lsm6dsr import LSM6DSR
+from lib.mpu9250 import MPU9250
 from cu import *
 from buzzer import *
 
@@ -15,25 +19,41 @@ from buzzer import *
 #### Constantes ####
 ####################
 DEPOTAGE        = True  # activation de la version avec depotage (sans trappe parachute)
-ACC_IMU         = False  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
+ACC_IMU         = True  # activation de l'information d'accélaration par l'IMU sinon par le contacteur mécanique
 BUZZER_ENABLE   = True  # activation du buzzer
 ACC_THESHOLD    = 1     # seuil de l'accélération pour détecter le décollage [g]
 TIMEOUT_FALLING = 7200  # temps après lequel la fusée passe en mode chute libre [ms]
 FREQ_ACQ        = 20    # Frequence d'acquisition des données [Hz]
 SERVO_OPEN      = 800   # [us]
 SERVO_CLOSE     = 1800  # [us]
-DEBUG           = False
+DEBUG           = True
 SOFT_VERSION    = "1.2"
+
+## Sensor board version
+# 10DOF_V1
+# 10DOF_V2.1
+# BR_SENSOR
+SENSOR_BOARD    = "10DOF_V1"
 
 #####################
 #### Declaration ####
 #####################
 # Declaration du bus de communication I2C
 i2c = I2C(1,freq=400000)  # default assignment: scl=Pin(7), sda=Pin(6)
-
+print(i2c.scan())
 # Declaration des capteurs
-baro = lps22.LPS22HB(i2c)
-imu = icm20948.ICM20948(i2c_bus=i2c)
+baro = LPS22HB(i2c)
+if SENSOR_BOARD == '10DOF_V1':
+    imu = ICM20948(i2c_bus=i2c)
+elif SENSOR_BOARD == '10DOF_V2.1':
+    imu = MPU9250(i2c=i2c)
+elif SENSOR_BOARD == 'BR_SENSOR':
+    imu = LSM6DSR(i2c_bus=i2c)
+else:
+    print("Attention: la carte sensor selectionnée ne correspond pas à une carte connue") 
+    print("Selection par défaut de la carte 10DOF V2.1")
+    SENSOR_BOARD = '10DOF_V2.1'
+    imu = MPU9250(i2c=i2c)
 
 # Declaration du timer
 timerAcq = Timer()
@@ -159,15 +179,29 @@ if __name__ == '__main__':
     time.sleep(0.6)
     # Configure le buzzer pour faire un son specifique avant décollage
     SetBuzzer(BUZZER_ENABLE, freq=1000, tps=2)
-
+    
     while True:
         if isSampling is True:
             # Acquisition du temps actuel
             tempsAcq = time.ticks_diff(time.ticks_ms(), tempsMsDebut)/1000.0
 
             # Acquisitions des capteurs
-            ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro_data()
+            ax, ay, az, gx, gy, gz = 0,0,0,0,0,0
+            # ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
             # mx, my, mz = imu.read_magnetometer_data()
+            # ax, ay, az, gx, gy, gz = imu1.read_accelerometer_gyro()
+
+            if SENSOR_BOARD == '10DOF_V1':
+                ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
+                temp_imu = imu.read_temperature()
+            elif SENSOR_BOARD == 'BR_SENSOR':
+                ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
+                temp_imu = imu.read_temperature()
+            else: # SENSOR_BOARD == '10DOF_V2.1'
+                ax, ay, az = imu.acceleration()
+                gx, gy, gz = imu.gyro()
+                temp_imu = imu.temperature()
+
             pressure = baro.read_pressure()
             temp = baro.read_temperature()
 
@@ -253,5 +287,5 @@ if __name__ == '__main__':
                 print(f'Gyroscope:     X = {gx:.2f} , Y = {gy:.2f} , Z = {gz:.2f}')
                 # print(f'Magnetic:      X = {mx:.2f} , Y = {my:.2f} , Z = {mz:.2f}')
                 print(f'Pressure:      P = {pressure:.2f} hPa')
-                print(f'Temperature:   T = {temp:.2f} °C')
+                print(f'Temperature:   T = {temp:.2f} dC / IMU = {temp_imu:.2f} dC')
                 print(f'Acc contact:   {accContact:.1d}')
