@@ -107,7 +107,7 @@ LSM6DSR_SCALE_G = ('250', '4000', '125', '', '500', '', '', '', '1000', '', '', 
 LSM6DSL_SCALE_G = ('250', '', '125', '', '500', '', '', '', '1000', '', '', '', '2000')
 
 class LSM6DSx:
-    def __init__(self, i2c_bus, addr = 0x6B):
+    def __init__(self, i2c_bus, addr = 0x6A):
         self._bus = i2c_bus
         self._addr = int(addr)
         self._power = True
@@ -123,7 +123,7 @@ class LSM6DSx:
             self._chip = "LSM6DSL"
             LSM6DSx_SCALE_G = LSM6DSL_SCALE_G
         else:
-            raise Exception('[LSM6DSx] Sensor ID error ('+str(self.read(LSM6DSx_WHO_AM_I))+')')
+            raise Exception('[LSM6DSx] Sensor ID error (expected 0x6A or 0x6B, got '+hex(self.read(LSM6DSx_WHO_AM_I))+')')
         # RESET
         self.write(LSM6DSx_CTRL3_C, 1)
         time.sleep(0.2)
@@ -138,9 +138,9 @@ class LSM6DSx:
         # Set ODR to 833Hz and full-scale to 16g
         self.write(LSM6DSx_CTRL1_XL, (0x7<<4) + (0x1<<2) + (0x0<<1))
         self._scale_a = 1
-        # Set ODR to 833Hz and full-scale to 2000 or 4000 dps
-        self.write(LSM6DSx_CTRL2_G, (0x7<<4) + 0x1)
-        self._scale_g = 1
+        # Set ODR to 833Hz and full-scale to 2000 dps
+        self.write(LSM6DSx_CTRL2_G, (0x7<<4) + 0xC)
+        self._scale_g = 12
     
     def read(self, reg, length=1):
         if length == 1:
@@ -167,7 +167,7 @@ class LSM6DSx:
             return LSM6DSx_SCALE_A[self._scale_a]
     
     def get_available_scale_a(self):
-        return LSM6DSx_SCALE_A
+        return [x for x in LSM6DSx_SCALE_A if not '']
 
     def scale_g(self, scale=None):
         if (scale is None) or (scale == ''):
@@ -181,7 +181,7 @@ class LSM6DSx:
             return LSM6DSx_SCALE_G[self._scale_g]
         
     def get_available_scale_g(self):
-        return LSM6DSx_SCALE_G
+        return [x for x in LSM6DSx_SCALE_G if not '']
     
     def read_acc_raw(self):
         acc_raw_val = self.read(LSM6DSx_OUTX_L_A, 6)

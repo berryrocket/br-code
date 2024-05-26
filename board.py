@@ -1,6 +1,6 @@
 ########################################
 #### BerryRocket Avionic ####
-# Parameter file
+# Board definition file
 # Louis Barbier
 # Licence CC-BY-NC-SA
 ########################################
@@ -15,13 +15,13 @@
 #   - BR_MICRO_AVIONIC
 MOTHER_BOARD = "BR_MINI_AVIONIC"
 
-### Sensor board selection (if BR_MINI_AVIONIC selected)
+### Sensor board selection (if BR_AVIONIC selected)
 # Board available:
 #   - NONE (no sensor board installed)
 #   - 10DOF_V1
 #   - 10DOF_V2.1
-#   - BR_SENSOR
-SENSOR_BOARD    = "BR_SENSOR"
+#   - BR_MINI_SENSOR
+SENSOR_BOARD    = "10DOF_V2.1"
 
 ### Ejection charge
 # activation de la version avec EJECTION_CHARGE (sans trappe parachute)
@@ -29,13 +29,12 @@ EJECTION_CHARGE = True
 
 ### IMU lift-off detection
 # activation de l'information d'accélération par l'IMU sinon par le contacteur mécanique
-LIFTOFF_DET_IMU     = True
-LIFTOFF_DET_CONTACT = True
+LIFTOFF_DET_IMU         = True
 # seuil de l'accélération pour détecter le décollage [g] (si LIFTOFF_DET_IMU=True)
-LIFTOFF_IMU_TH  = 1
+LIFTOFF_IMU_TH    = 1
 
-### Falling timeout (after lift-off)
-# temps après lequel la fusée passe en mode chute libre [ms]
+### Falling apogee (after lift-off)
+# Temps après lequel la fusée atteint l'apogée [ms]
 TIMEOUT_APOGEE = 7200
 
 ### Buzzer activation
