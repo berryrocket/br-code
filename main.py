@@ -40,7 +40,7 @@ else:
         imu = ICM20948(i2c_bus=i2c)
     elif PARAMS.SENSOR_BOARD == '10DOF_V2.1':
         imu = MPU9250(i2c=i2c)
-    elif PARAMS.SENSOR_BOARD == 'BR_SENSOR':
+    elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
         imu = LSM6DSx(i2c_bus=i2c)
     else:
         print("Attention: la carte sensor selectionnée ne correspond pas à une carte connue") 
@@ -124,12 +124,12 @@ def Sampling(timer):
     #if is_sampling is False:
     is_sampling = True
 
-def FermetureParachute():
+def CloseParachute():
     if PARAMS.EJECTION_CHARGE is False:
         global porte_para
         porte_para.duty_ns(PARAMS.SERVO_CLOSE*1000)
 
-def OuvertureParachute():
+def OpenParachute():
     if PARAMS.EJECTION_CHARGE is False:
         global porte_para
         porte_para.duty_ns(PARAMS.SERVO_OPEN*1000)
@@ -147,14 +147,14 @@ if __name__ == '__main__':
     SetBuzzer(False)
 
     # Ouvre la trappe parachute au démarrage si besoin
-    OuvertureParachute()
+    OpenParachute()
 
     # Attente pour placer la trappe parachute si besoin
     # InitMusic(BUZZER_ENABLE)
     time.sleep(3)
     
     # Fermeture de la trappe parachute si besoin
-    FermetureParachute()
+    CloseParachute()
 
     # Initialisation des fonctions d'acquisitions
     InitBoard()
@@ -184,17 +184,13 @@ if __name__ == '__main__':
             # Acquisition du temps actuel
             current_time = time.ticks_diff(time.ticks_ms(), tempsMsDebut)/1000.0
 
-            # Acquisitions des capteurs
-            # ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
-            # mx, my, mz = imu.read_magnetometer_data()
-
             if PARAMS.SENSOR_BOARD != None:
                 pressure = baro.read_pressure()
                 temp = baro.read_temperature()
                 if PARAMS.SENSOR_BOARD == '10DOF_V1':
                     ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
                     temp_imu = imu.read_temperature()
-                elif PARAMS.SENSOR_BOARD == 'BR_SENSOR':
+                elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
                     ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
                     temp_imu = imu.read_temperature()
                 else: # SENSOR_BOARD == '10DOF_V2.1'
@@ -203,7 +199,7 @@ if __name__ == '__main__':
                     temp_imu = imu.temperature
 
             # Si l'acceleration dépasse le seuil ou que la pin d'accélération est appuyée, et que le décollage n'est pas encore arrivé, il y a eu décollage
-            if ((ay < -1-PARAMS.LIFTOFF_IMU_TH and PARAMS.LIFTOFF_DET_IMU is True) or (acc_contact is True and PARAMS.LIFTOFF_DET_CONTACT is True)) and (is_launched is False):
+            if ((ay < -1-PARAMS.LIFTOFF_IMU_THRESHOLD and PARAMS.LIFTOFF_DET_IMU is True) or (acc_contact is True and PARAMS.LIFTOFF_DET_CONTACT is True)) and (is_launched is False):
                 # Changement de status de l'indicateur de decollage
                 is_launched = True
                 # Sauvegarde du temps de décollage
@@ -214,23 +210,23 @@ if __name__ == '__main__':
                     # Affichage sur la console
                     print('Decollage !')
 
-            # Si le decollage est passé et que la chute libre n'est pas encore arrivé
+            # Si le decollage est passé et que la chute libre n'est pas encore arrivée
             if (is_launched is True) and (is_falling is False):
                 # Si le timer de chute libre est dépassé
                 if (time.ticks_ms()-launch_time > PARAMS.TIMEOUT_APOGEE):
                     # Ouverture de la trappe parachute si besoin 
-                    OuvertureParachute()
+                    OpenParachute()
                     # Changement de status de chute libre
                     is_falling = True
                     # Changement du son du buzzer
                     SetBuzzer(PARAMS.BUZZER_ENABLE, freq=2000, tps=0.5)
                     # Ecriture du temps actuel du debut de la chute libre dans le fichier
                     platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
-                    platform_file.write(f"# Chute libre: {current_time:.3f}s\n")
+                    platform_file.write(f"# Free-fall: {current_time:.3f}s\n")
                     platform_file.close()
                     if PARAMS.DEBUG is True:
                         # Affichage sur la console
-                        print('Chute libre !')
+                        print('Free-fall !')
             
             # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
             dataFilePlat = f"{current_time:.3f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f} {gx:.2f} {gy:.2f} {gz:.2f}\n"
@@ -250,6 +246,7 @@ if __name__ == '__main__':
                 if write_data_file is False:
                     # Sauvegarde RAM avant écriture
                     data_platform_buffer.append(dataFilePlat)
+                    # Si il y a plus de 0.5s de donnée enregistée, la prochaine fois elles seront écrite sur le fichier
                     if (len(data_platform_buffer) >= PARAMS.FREQ_ACQ/2):
                         write_data_file = True
                 elif write_data_file is True:
@@ -259,7 +256,7 @@ if __name__ == '__main__':
                         platform_file.write(dataEl)
                     data_platform_buffer = []
                     if first_write_file is True:
-                        platform_file.write(f"# Decollage: {current_time:.3f}s\n")
+                        platform_file.write(f"# Lift-off: {current_time:.3f}s\n")
                         first_write_file = False
                     platform_file.write(dataFilePlat)
                     platform_file.close()
