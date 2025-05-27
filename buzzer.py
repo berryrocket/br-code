@@ -5,9 +5,13 @@
 
 import time
 from machine import Pin,PWM,Timer
+import parameters as PARAMS
 
 # Declaration d'un PWM pour le buzzer
-buzzer = PWM(Pin(18))
+if PARAMS.MOTHER_BOARD == "BR_MINI_AVIONIC":
+    buzzer = PWM(Pin(18))
+elif PARAMS.MOTHER_BOARD == "BR_MICRO_AVIONIC":
+    buzzer = PWM(Pin(0))
 
 # Declaration timer pour le buzzer et son extinction
 timerBuzzer = Timer()
