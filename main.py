@@ -32,7 +32,7 @@ else:
 print(i2c.scan())
 # Declaration des capteurs
 if PARAMS.SENSOR_BOARD == "NONE" or PARAMS.SENSOR_BOARD == None:
-    SENSOR_BOARD = None
+    PARAMS.SENSOR_BOARD = None
     baro = None
     imu = None
 else:
