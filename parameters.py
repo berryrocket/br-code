@@ -53,3 +53,15 @@ BUZZER_ENABLE   = True
 SOFT_VERSION    = "1.9"
 DEBUG           = True
 FREQ_ACQ        = 20    # Frequence d'acquisition des données [Hz]
+
+### Télémétrie Nectar (WiFi AP + WebSocket serveur)
+# Trames Nectar (https://github.com/mlavardin/NectarMC) émises en messages
+# WebSocket binaires. NectarMC se connecte en client à ws://192.168.4.1:<port>/
+TELEMETRY_ENABLE     = True
+TELEMETRY_AP_SSID    = "BerryRocket-TM"
+TELEMETRY_AP_PSK     = "berryrocket"   # WPA2, min 8 char ; "" pour AP ouvert
+TELEMETRY_AP_CHANNEL = 6
+TELEMETRY_WS_PORT    = 80
+TELEMETRY_SSID_TYPE  = 0   # 0=FX, 1=MF, 2=BALLOON, 3=OTHER
+TELEMETRY_SSID_NUM   = 0   # 0..255
+TELEMETRY_APID       = 0   # 0..63

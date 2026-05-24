@@ -14,6 +14,7 @@ from lib.lsm6dsx import LSM6DSx
 from lib.mpu9250 import MPU9250
 from cu import *
 from buzzer import *
+from telemetry import TelemetryWS
 import parameters as PARAMS
 
 #####################
@@ -159,6 +160,20 @@ if __name__ == '__main__':
     # Initialisation des fonctions d'acquisitions
     InitBoard()
 
+    # Initialisation de la télémétrie Nectar (WiFi AP + WS serveur)
+    telem = None
+    if PARAMS.TELEMETRY_ENABLE:
+        telem = TelemetryWS(
+            ssid_ap=PARAMS.TELEMETRY_AP_SSID,
+            password=PARAMS.TELEMETRY_AP_PSK,
+            channel=PARAMS.TELEMETRY_AP_CHANNEL,
+            port=PARAMS.TELEMETRY_WS_PORT,
+            ssid_type=PARAMS.TELEMETRY_SSID_TYPE,
+            ssid_num=PARAMS.TELEMETRY_SSID_NUM,
+            apid=PARAMS.TELEMETRY_APID,
+        )
+        telem.start()
+
     # Ouvre un fichier pour l'écriture des données
     InitPlatFile()
     data_platform_buffer = []
@@ -178,6 +193,7 @@ if __name__ == '__main__':
     ax, ay, az, gx, gy, gz, mx, my, mz = 0,0,0,0,0,0,0,0,0
     pressure = 0
     temp = 0
+    temp_imu = 0
     
     while True:
         if is_sampling is True:
@@ -227,7 +243,16 @@ if __name__ == '__main__':
                     if PARAMS.DEBUG is True:
                         # Affichage sur la console
                         print('Free-fall !')
-            
+
+            # Emission de la trame de télémétrie Nectar (silencieuse si désactivée ou aucun client)
+            if telem is not None:
+                flags = (int(is_launched) | (int(is_falling) << 1) | (int(acc_contact) << 2))
+                telem.send_telemetry(
+                    int(current_time*1000), pressure, temp,
+                    ax, ay, az, gx, gy, gz,
+                    temp_imu, flags,
+                )
+
             # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
             dataFilePlat = f"{current_time:.3f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f} {gx:.2f} {gy:.2f} {gz:.2f}\n"
 
