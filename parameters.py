@@ -50,7 +50,7 @@ BUZZER_ENABLE   = True
 # Trames Nectar (https://github.com/mlavardin/NectarMC) émises en messages
 # WebSocket binaires. NectarMC se connecte en client à ws://192.168.4.1:<port>/
 TELEMETRY_ENABLE     = True
-TELEMETRY_SSID_NUM   = 0   # 0..255
+TELEMETRY_SSID_NUM   = None   # 0..255 (si None, ce sera l'id unique de la carte PicoW)
 
 #####
 # System parameters (be careful when you modify these parameters)

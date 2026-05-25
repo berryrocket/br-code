@@ -1,5 +1,9 @@
-# BerryRocket - WiFi AP + minimal WebSocket server pushing Nectar frames
+########################################
+#### BerryRocket ####
+# WiFi AP + minimal WebSocket server pushing Nectar frames
+# Louis Barbier
 # Licence CC-BY-NC-SA
+########################################
 
 import struct
 import time
@@ -65,6 +69,9 @@ class TelemetryWS:
         self._handshake_slice_ms = 3
         # Deadline globale d'un handshake (en ms) : au-delà on abandonne.
         self._handshake_timeout_ms = 3000
+        # Buffer de réception client (pour parser les frames WS entrantes :
+        # ping/pong/close). Réinitialisé à chaque nouveau client.
+        self._rx_buf = b""
 
     # --- helpers -------------------------------------------------------
 
@@ -288,6 +295,7 @@ class TelemetryWS:
         self._pending = None
         if self._finalize_handshake(cli, buf):
             self._client = cli
+            self._rx_buf = b""
             self._log("[TELEM] WS client connected")
         else:
             try:
@@ -340,6 +348,122 @@ class TelemetryWS:
                          time.ticks_add(time.ticks_ms(), self._handshake_timeout_ms))
         self._drive_pending()
 
+    def _handle_incoming(self):
+        # Lit et parse les frames WebSocket entrantes (toujours masquées
+        # côté client d'après la RFC 6455). On répond aux ping (opcode 0x9)
+        # par un pong (0xA) et on ferme proprement sur close (0x8).
+        # Tout est non bloquant : si le buffer n'est pas complet on rend
+        # la main et on reprend au prochain appel.
+        if self._client is None:
+            return
+        # Drain ce qui est dispo en non-bloquant.
+        try:
+            while True:
+                chunk = self._client.recv(256)
+                if not chunk:
+                    # Peer a fermé proprement (TCP FIN).
+                    self._drop_client()
+                    return
+                self._rx_buf += chunk
+                if len(self._rx_buf) > 4096:
+                    # Sécurité : un client qui spamme sans qu'on parse.
+                    self._log("[TELEM] rx buffer overflow, dropping client")
+                    self._drop_client()
+                    return
+        except OSError as e:
+            err = getattr(e, "errno", None)
+            if err not in (_EAGAIN, 11, 110, 116):
+                self._log("[TELEM] recv error:", e)
+                self._drop_client()
+                return
+            # EAGAIN : rien de plus à lire, on continue avec ce qu'on a.
+
+        # Parse autant de frames complètes que possible.
+        while self._client is not None:
+            consumed = self._parse_one_frame()
+            if consumed <= 0:
+                # Pas assez de données pour une frame complète, ou erreur.
+                break
+            self._rx_buf = self._rx_buf[consumed:]
+
+    def _parse_one_frame(self):
+        # Retourne le nombre d'octets consommés, 0 si frame incomplète,
+        # -1 si frame invalide (on dropera le client).
+        b = self._rx_buf
+        n = len(b)
+        if n < 2:
+            return 0
+        fin = (b[0] & 0x80) != 0
+        opcode = b[0] & 0x0F
+        masked = (b[1] & 0x80) != 0
+        plen = b[1] & 0x7F
+        if not masked:
+            # Le client DOIT masquer ; sinon RFC = fermer.
+            self._log("[TELEM] unmasked client frame, dropping")
+            self._drop_client()
+            return -1
+
+        off = 2
+        if plen == 126:
+            if n < off + 2:
+                return 0
+            plen = (b[off] << 8) | b[off + 1]
+            off += 2
+        elif plen == 127:
+            if n < off + 8:
+                return 0
+            plen = 0
+            for i in range(8):
+                plen = (plen << 8) | b[off + i]
+            off += 8
+
+        if n < off + 4 + plen:
+            return 0  # frame incomplète, on attend la suite
+
+        mask = b[off:off + 4]
+        off += 4
+        raw = b[off:off + plen]
+        # Démasque le payload (XOR avec la masking key, cyclique sur 4 octets).
+        if plen and mask:
+            payload = bytes(raw[i] ^ mask[i & 3] for i in range(plen))
+        else:
+            payload = b""
+        total = off + plen
+
+        # Dispatch par opcode (cf RFC 6455 §5.5).
+        if opcode == 0x9:  # PING
+            self._send_control(0x8A, payload)  # PONG avec même payload
+            self._log("[TELEM] ping->pong", len(payload), "B")
+        elif opcode == 0xA:  # PONG (réponse à un ping qu'on aurait envoyé)
+            pass
+        elif opcode == 0x8:  # CLOSE
+            # On renvoie un close en miroir puis on coupe.
+            self._send_control(0x88, payload[:2] if len(payload) >= 2 else b"")
+            self._log("[TELEM] client requested close")
+            self._drop_client()
+        elif opcode in (0x0, 0x1, 0x2):
+            # Frame data du client : non utilisée par notre protocole, ignorée.
+            # On garde la connexion (FIN ou non) pour ne pas casser un client
+            # qui enverrait des messages applicatifs sans qu'on les attende.
+            if not fin:
+                self._log("[TELEM] ignored continuation frame opcode", opcode)
+        else:
+            # Opcode réservé/inconnu -> ferme la connexion (RFC).
+            self._log("[TELEM] unknown opcode", opcode)
+            self._drop_client()
+            return -1
+        return total
+
+    def _send_control(self, opcode_byte, payload):
+        # Frame de contrôle server->client (non masquée, payload ≤ 125 B).
+        if self._client is None:
+            return
+        payload = payload[:125]  # RFC : control frames ≤ 125 B
+        try:
+            self._client.send(bytes((opcode_byte, len(payload))) + payload)
+        except OSError:
+            self._drop_client()
+
     def _drop_client(self):
         if self._client is not None:
             try:
@@ -353,6 +477,7 @@ class TelemetryWS:
             except OSError:
                 pass
             self._client = None
+            self._rx_buf = b""
 
     @staticmethod
     def _ws_header(n):
@@ -372,6 +497,9 @@ class TelemetryWS:
         if not self._ok:
             return
         self._accept_if_pending()
+        # Traite les frames entrantes (ping/pong/close) avant d'émettre.
+        # Non bloquant : se contente de ce qui est déjà dans le buffer TCP.
+        self._handle_incoming()
         if self._client is None:
             return
 
