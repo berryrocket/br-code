@@ -2,3 +2,5 @@
 *.json
 debug.py
 .micropico
+*.pyc
+nectar/

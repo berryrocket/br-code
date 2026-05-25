@@ -3,46 +3,113 @@
 
 import struct
 from lib.nectar import build_frame
+import time
 
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-_PAYLOAD_FMT = "<I8fB"  # time_ms, p, t, ax,ay,az, gx,gy,gz, t_imu, flags
+_PAYLOAD_FMT = "<I9fB"  # time_ms, p, t, ax,ay,az, gx,gy,gz, t_imu, flags
 
 
 class TelemetryWS:
-    def __init__(self, ssid_ap, password, channel, port,
-                 ssid_type, ssid_num, apid):
-        self.ssid_ap = ssid_ap
+    def __init__(self, ssid_prefix, open_network, password,
+                 channel, port, ssid_type, apid, ssid_num=None, debug=False):
+        self.ssid_prefix = ssid_prefix
+        self.open_network = open_network
         self.password = password
         self.channel = channel
         self.port = port
         self.ssid_type = ssid_type
+        # ssid_num=None -> dérivé du dernier octet de machine.unique_id() dans start()
         self.ssid_num = ssid_num
         self.apid = apid
         self._ok = False
         self._srv = None
         self._client = None
         self._wlan = None
+        self.ssid_ap = None  # SSID final calcule dans start()
+        self.debug = debug
+
+    def _build_ssid(self):
+        try:
+            import machine, binascii
+            uid = machine.unique_id()           # 8 octets sur RP2040
+            suffix = binascii.hexlify(uid[-2:]).decode().upper()  # 2 derniers octets -> 4 hex
+        except Exception:
+            suffix = "0000"
+        full = "{}-{}".format(self.ssid_prefix, suffix)
+        return full[:32]  # limite IEEE 802.11
 
     def start(self):
         try:
+            try:
+                import os
+                machine_str = os.uname().machine
+            except Exception:
+                machine_str = ""
+            if "Pico W" not in machine_str:
+                print("[telem] carte detectee:", machine_str or "inconnue",
+                      "- pas de WiFi (Pico non-W), telemetrie desactivee")
+                self._ok = False
+                return False
+
             import network
             import socket
             self._socket_mod = socket
 
+            # Code pays : évite la phase prudente du driver CYW43 au démarrage
+            # (sinon scan régulatoire + délais d'association inutiles).
+            try:
+                network.country("FR")
+            except (AttributeError, OSError):
+                pass
+
+            ssid = self._build_ssid()
+            self.ssid_ap = ssid
+
+            # Si ssid_num n'a pas été imposé, on le dérive du dernier octet
+            # de machine.unique_id() -> mission Nectar unique par carte,
+            # visuellement corrélée au suffixe WiFi (le dernier byte hex).
+            if self.ssid_num is None:
+                try:
+                    import machine
+                    self.ssid_num = machine.unique_id()[-1] & 0xFF
+                except Exception:
+                    self.ssid_num = 0
+
             wlan = network.WLAN(network.AP_IF)
             wlan.active(False)
+
+            if self.open_network:
+                # security=0 -> reseau ouvert (constante MicroPython OPEN)
+                try:
+                    wlan.config(essid=ssid, security=0, channel=self.channel)
+                except (OSError, ValueError, TypeError):
+                    # Firmware ancien : config separee
+                    try:
+                        wlan.config(essid=ssid, security=0)
+                    except (OSError, ValueError, TypeError):
+                        wlan.config(essid=ssid)
+                        try:
+                            wlan.config(security=0)
+                        except Exception:
+                            pass
+            else:
+                try:
+                    wlan.config(essid=ssid, password=self.password,
+                                channel=self.channel)
+                except (OSError, ValueError, TypeError):
+                    wlan.config(essid=ssid, password=self.password)
+
+            # Désactive le powersave WiFi
             try:
-                wlan.config(essid=self.ssid_ap, password=self.password,
-                            channel=self.channel)
-            except (OSError, ValueError):
-                # Older MicroPython may not accept channel kw; retry without it
-                wlan.config(essid=self.ssid_ap, password=self.password)
+                wlan.config(pm = network.WLAN.PM_NONE, txpower = 18)
+            except (OSError, ValueError, TypeError):
+                pass
+
             wlan.active(True)
             # Wait for the AP interface to be up
             for _ in range(50):
                 if wlan.active():
                     break
-                import time
                 time.sleep_ms(100)
             self._wlan = wlan
 
@@ -54,7 +121,15 @@ class TelemetryWS:
             self._srv = srv
 
             self._ok = True
-            print("[telem] AP up, WS server on port", self.port)
+            try:
+                ip = wlan.ifconfig()[0]
+            except Exception:
+                ip = "?"
+            mode = "OPEN" if self.open_network else "WPA2"
+            ssid_type_str = ("FX", "MF", "BALLOON", "OTHER")[self.ssid_type & 0x03]
+            print("[telem] AP up SSID='{}' ({}) IP={} WS port={} mission={}{} APID={}".format(
+                ssid, mode, ip, self.port,
+                ssid_type_str, self.ssid_num, self.apid))
             return True
         except Exception as e:
             print("[telem] start failed:", e)
@@ -85,6 +160,16 @@ class TelemetryWS:
                     key = value.strip()
                     break
         if key is None:
+            # # Pas un upgrade WebSocket : très probablement une sonde captive
+            # # portal de l'OS (Windows: msftconnecttest, Android: gstatic 204,
+            # # macOS/iOS: captive.apple.com). On renvoie 204 No Content -> l'OS
+            # # considère "internet OK" immédiatement et arrête de poller.
+            # try:
+            #     cli.send(b"HTTP/1.1 204 No Content\r\n"
+            #              b"Content-Length: 0\r\n"
+            #              b"Connection: close\r\n\r\n")
+            # except OSError:
+            #     pass
             return False
 
         try:
@@ -116,7 +201,8 @@ class TelemetryWS:
             cli, addr = self._srv.accept()
         except OSError:
             return
-        print("[telem] incoming client:", addr)
+        if self.debug is True:
+            print("[telem] incoming client:", addr)
         # Replace any existing client
         if self._client is not None:
             try:
@@ -126,7 +212,8 @@ class TelemetryWS:
             self._client = None
         if self._handshake(cli):
             self._client = cli
-            print("[telem] WS client connected")
+            if self.debug is True:
+                print("[telem] WS client connected")
         else:
             try:
                 cli.close()
@@ -143,7 +230,7 @@ class TelemetryWS:
 
     # --- public emission ----------------------------------------------
 
-    def send_telemetry(self, time_ms, pressure_hpa, temp_c,
+    def send_telemetry(self, time_ms, pressure_bar, temp_c,
                        ax, ay, az, gx, gy, gz, temp_imu_c, flags):
         if not self._ok:
             return
@@ -154,10 +241,10 @@ class TelemetryWS:
         try:
             payload = struct.pack(_PAYLOAD_FMT,
                                   int(time_ms) & 0xFFFFFFFF,
-                                  float(pressure_hpa), float(temp_c),
-                                  float(ax), float(ay), float(az),
-                                  float(gx), float(gy), float(gz),
-                                  float(temp_imu_c),
+                                  (pressure_bar), (temp_c),
+                                  (ax), (ay), (az),
+                                  (gx), (gy), (gz),
+                                  (temp_imu_c),
                                   int(flags) & 0xFF)
             frame = build_frame(self.ssid_type, self.ssid_num, self.apid, payload)
         except Exception as e:

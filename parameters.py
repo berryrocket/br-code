@@ -21,7 +21,7 @@ MOTHER_BOARD = "BR_MINI_AVIONIC"
 #   - 10DOF_V1
 #   - 10DOF_V2.1
 #   - BR_MINI_SENSOR
-SENSOR_BOARD    = "BR_MINI_SENSOR"
+SENSOR_BOARD    = "NONE"
 
 ### Ejection charge
 # activation de la version avec EJECTION_CHARGE (sans trappe parachute)
@@ -46,22 +46,24 @@ SERVO_CLOSE     = 1800  # [us] (position fermeture trappe du servomoteur)
 ### Buzzer activation
 BUZZER_ENABLE   = True
 
-#####
-# System parameters (be careful when you modify these parameters)
-#####
-
-SOFT_VERSION    = "1.9"
-DEBUG           = True
-FREQ_ACQ        = 20    # Frequence d'acquisition des données [Hz]
-
 ### Télémétrie Nectar (WiFi AP + WebSocket serveur)
 # Trames Nectar (https://github.com/mlavardin/NectarMC) émises en messages
 # WebSocket binaires. NectarMC se connecte en client à ws://192.168.4.1:<port>/
 TELEMETRY_ENABLE     = True
-TELEMETRY_AP_SSID    = "BerryRocket-TM"
-TELEMETRY_AP_PSK     = "berryrocket"   # WPA2, min 8 char ; "" pour AP ouvert
-TELEMETRY_AP_CHANNEL = 6
-TELEMETRY_WS_PORT    = 80
-TELEMETRY_SSID_TYPE  = 0   # 0=FX, 1=MF, 2=BALLOON, 3=OTHER
 TELEMETRY_SSID_NUM   = 0   # 0..255
-TELEMETRY_APID       = 0   # 0..63
+
+#####
+# System parameters (be careful when you modify these parameters)
+#####
+
+SOFT_VERSION                = "2.0"
+DEBUG                       = False
+FREQ_ACQ                    = 20  # Frequence d'acquisition des données [Hz]
+TELEMETRY_ENABLE            = True
+TELEMETRY_AP_SSID_PREFIX    = "BerryRocket"  # préfixe SSID
+TELEMETRY_AP_OPEN           = True           # True = réseau ouvert (pas de mot de passe)
+TELEMETRY_AP_PSK            = "berryrocket"  # ignoré si TELEMETRY_AP_OPEN=True ; sinon WPA2 (min 8 char)
+TELEMETRY_AP_CHANNEL        = 6
+TELEMETRY_WS_PORT           = 80             # NectarMC se connecte à ws://192.168.4.1:80/
+TELEMETRY_SSID_TYPE         = 1   # 0=FX, 1=MF, 2=BALLOON, 3=OTHER
+TELEMETRY_APID              = 0   # 0..63

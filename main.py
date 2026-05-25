@@ -122,7 +122,6 @@ def InitPlatFile():
 # Activation de l'acquisition des données
 def Sampling(timer):
     global is_sampling
-    #if is_sampling is False:
     is_sampling = True
 
 def CloseParachute():
@@ -164,13 +163,15 @@ if __name__ == '__main__':
     telem = None
     if PARAMS.TELEMETRY_ENABLE:
         telem = TelemetryWS(
-            ssid_ap=PARAMS.TELEMETRY_AP_SSID,
+            ssid_prefix=PARAMS.TELEMETRY_AP_SSID_PREFIX,
+            open_network=PARAMS.TELEMETRY_AP_OPEN,
             password=PARAMS.TELEMETRY_AP_PSK,
             channel=PARAMS.TELEMETRY_AP_CHANNEL,
             port=PARAMS.TELEMETRY_WS_PORT,
             ssid_type=PARAMS.TELEMETRY_SSID_TYPE,
-            ssid_num=PARAMS.TELEMETRY_SSID_NUM,
             apid=PARAMS.TELEMETRY_APID,
+            ssid_num=PARAMS.TELEMETRY_SSID_NUM,
+            debug=PARAMS.DEBUG
         )
         telem.start()
 
