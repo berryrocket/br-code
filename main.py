@@ -29,7 +29,6 @@ else:
     print("/!\\ La carte mère sélectionnée n'est pas référencée !\n")
     exit(1)
 
-print(i2c.scan())
 # Declaration des capteurs
 if PARAMS.SENSOR_BOARD == "NONE" or PARAMS.SENSOR_BOARD == None:
     PARAMS.SENSOR_BOARD = None
@@ -171,6 +170,7 @@ if __name__ == '__main__':
             ssid_type=PARAMS.TELEMETRY_SSID_TYPE,
             apid=PARAMS.TELEMETRY_APID,
             ssid_num=PARAMS.TELEMETRY_SSID_NUM,
+            rate_hz=PARAMS.TELEMETRY_RATE_HZ,
             debug=PARAMS.DEBUG
         )
         telem.start()

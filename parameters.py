@@ -59,7 +59,7 @@ TELEMETRY_SSID_NUM   = 0   # 0..255
 SOFT_VERSION                = "2.0"
 DEBUG                       = False
 FREQ_ACQ                    = 20  # Frequence d'acquisition des données [Hz]
-TELEMETRY_ENABLE            = True
+TELEMETRY_RATE_HZ           = 5   # Fréquence d'émission radio [Hz]
 TELEMETRY_AP_SSID_PREFIX    = "BerryRocket"  # préfixe SSID
 TELEMETRY_AP_OPEN           = True           # True = réseau ouvert (pas de mot de passe)
 TELEMETRY_AP_PSK            = "berryrocket"  # ignoré si TELEMETRY_AP_OPEN=True ; sinon WPA2 (min 8 char)
