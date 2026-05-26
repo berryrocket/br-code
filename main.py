@@ -43,9 +43,9 @@ else:
     elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
         imu = LSM6DSx(i2c_bus=i2c)
     else:
-        print("Attention: la carte sensor selectionnée ne correspond pas à une carte connue") 
-        print("Selection par défaut de la carte 10DOF V2.1")
-        PARAMS.SENSOR_BOARD = '10DOF_V2.1'
+        print("Attention: la carte sensor sélectionnée ne correspond pas à une carte connue") 
+        print("Selection par défaut de la carte BR-MINI-SENSOR")
+        PARAMS.SENSOR_BOARD = 'BR_MINI_SENSOR'
         imu = MPU9250(i2c=i2c)
 
 # Declaration du timer
@@ -272,7 +272,7 @@ if __name__ == '__main__':
                 if write_data_file is False:
                     # Sauvegarde RAM avant écriture
                     data_platform_buffer.append(dataFilePlat)
-                    # Si il y a plus de 0.5s de donnée enregistée, la prochaine fois elles seront écrite sur le fichier
+                    # Si il y a plus de 0.5s de donnée enregistée, la prochaine fois elles seront écrites sur le fichier
                     if (len(data_platform_buffer) >= PARAMS.FREQ_ACQ/2):
                         write_data_file = True
                 elif write_data_file is True:
