@@ -123,8 +123,9 @@ class TelemetryWS:
             except Exception:
                 machine_str = ""
             if not self._has_wifi(machine_str):
-                print("[TELEM] carte detectee:", machine_str or "inconnue",
-                      "- pas de WiFi (Pico non-W), telemetrie desactivee")
+                if self.debug:
+                    print("[TELEM] carte detectee:", machine_str or "inconnue",
+                          "- pas de WiFi (Pico non-W), telemetrie desactivee")
                 self._ok = False
                 return False
 
