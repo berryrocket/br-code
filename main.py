@@ -12,6 +12,7 @@ from lib.lps22hb import LPS22HB
 from lib.icm20948 import ICM20948
 from lib.lsm6dsx import LSM6DSx
 from lib.mpu9250 import MPU9250
+from lib.xis2mdx import xIS2MDx
 from cu import *
 from buzzer import *
 from telemetry import TelemetryWS
@@ -42,6 +43,7 @@ else:
         imu = MPU9250(i2c=i2c)
     elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
         imu = LSM6DSx(i2c_bus=i2c)
+        mag = xIS2MDx(i2c_bus=i2c)
     else:
         print("Attention: la carte sensor sélectionnée ne correspond pas à une carte connue") 
         print("Selection par défaut de la carte BR-MINI-SENSOR")
@@ -115,7 +117,8 @@ def InitPlatFile():
         platform_file.write(f"Accélero contact\n")
     platform_file.write(f"## Fenetrage temporel : {PARAMS.TIMEOUT_APOGEE:d} ms\n")
     platform_file.write(f"## Frequence acq données: {PARAMS.FREQ_ACQ:d} Hz\n")
-    platform_file.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] | gyro X [dps] | gyro Y [dps] | gyro Z [dps]\n")
+    platform_file.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] "),
+    platform_file.write(f"| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [gauss] | mag Y [gauss] | mag Z [gauss]\n")
     platform_file.close()
 
 # Activation de l'acquisition des données
@@ -194,7 +197,7 @@ if __name__ == '__main__':
     ax, ay, az, gx, gy, gz, mx, my, mz = 0,0,0,0,0,0,0,0,0
     pressure = 0
     temp = 0
-    temp_imu = 0
+    temp_imu, temp_mag = 0,0
     
     while True:
         if is_sampling is True:
@@ -209,7 +212,11 @@ if __name__ == '__main__':
                     temp_imu = imu.read_temperature()
                 elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
                     ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
+                    mx, my_tmp, mz = mag.read_mag()
+                    # Réagencement de l'axe Y du magnetomètre pour correspondre à l'IMU
+                    my = -my_tmp
                     temp_imu = imu.read_temperature()
+                    temp_mag = mag.read_temperature()
                 else: # SENSOR_BOARD == '10DOF_V2.1'
                     ax, ay, az = imu.acceleration
                     gx, gy, gz = imu.gyro
@@ -255,7 +262,7 @@ if __name__ == '__main__':
                 )
 
             # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)
-            dataFilePlat = f"{current_time:.3f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f} {gx:.2f} {gy:.2f} {gz:.2f}\n"
+            dataFilePlat = f"{current_time:.3f} {pressure:.1f} {temp:.1f} {ax:.2f} {ay:.2f} {az:.2f} {gx:.2f} {gy:.2f} {gz:.2f} {mx:.2f} {my:.2f} {mz:.2f}\n"
 
             # Si le decollage n'a pas encore eu lieu
             if is_launched is False:
@@ -306,7 +313,8 @@ if __name__ == '__main__':
                 if PARAMS.SENSOR_BOARD != None:
                     print(f'Acceleration:  X = {ax:.2f} , Y = {ay:.2f} , Z = {az:.2f}')
                     print(f'Gyroscope:     X = {gx:.2f} , Y = {gy:.2f} , Z = {gz:.2f}')
+                    print(f'Magnetometre:  X = {mx:.2f} , Y = {my:.2f} , Z = {mz:.2f}')
                     print(f'Pressure:      P = {pressure:.2f} hPa')
-                    print(f'Temperature:   T = {temp:.2f} dC / IMU = {temp_imu:.2f} dC')
+                    print(f'Temperature:   T = {temp:.2f} dC / IMU = {temp_imu:.2f} dC / MAG = {temp_mag:.2f} dC')
                 print(f'Acc contact:   {acc_contact:.1d}')
                 time.sleep(0.250)
