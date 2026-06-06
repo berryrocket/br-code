@@ -16,6 +16,7 @@ from lib.xis2mdx import xIS2MDx
 from cu import *
 from buzzer import *
 from telemetry import TelemetryWS
+import ground_cmd
 import parameters as PARAMS
 
 #####################
@@ -108,19 +109,22 @@ def InitPlatFile():
 
     platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
     platform_file.write(f"########\n")
-    platform_file.write(f"## Version soft : v{PARAMS.SOFT_VERSION:s}\n")
+    platform_file.write(f"## Version logiciel : v{PARAMS.SOFT_VERSION:s}\n")
     platform_file.write(f"## Type fusée : ")
     if (PARAMS.EJECTION_CHARGE is True):
-        platform_file.write(f"Ejection charge\n")
+        platform_file.write(f"Dépotage\n")
     else:
         platform_file.write(f"Trappe parachute\n")
     platform_file.write(f"## Détection décollage : ")
     if (PARAMS.LIFTOFF_DET_IMU is True):
-        platform_file.write(f"IMU\n")
+        platform_file.write(f"IMU")
+        if (PARAMS.LIFTOFF_DET_CONTACT is True):
+            platform_file.write(f" + ")
     if (PARAMS.LIFTOFF_DET_CONTACT is True):
-        platform_file.write(f"Accélero contact\n")
+        platform_file.write(f"Accélero contact")
+    platform_file.write(f"\n")
     platform_file.write(f"## Fenetrage temporel : {PARAMS.TIMEOUT_APOGEE:d} ms\n")
-    platform_file.write(f"## Frequence acq données: {PARAMS.FREQ_ACQ:d} Hz\n")
+    platform_file.write(f"## Frequence acquisition données: {PARAMS.FREQ_ACQ:d} Hz\n")
     platform_file.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] "),
     platform_file.write(f"| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [Gauss] | mag Y [Gauss] | mag Z [Gauss]\n")
     platform_file.close()
@@ -161,6 +165,18 @@ if __name__ == '__main__':
     
     # Fermeture de la trappe parachute si besoin
     CloseParachute()
+
+    # Partage des fonctions de pilotage trappe avec le module ground_cmd
+    # pour les commandes web (sous armement). On passe directement
+    # OpenParachute / CloseParachute : source de verite unique pour
+    # l'actionnement physique, le cas EJECTION_CHARGE reste gere ici.
+    if porte_para != 0:
+        ground_cmd.init(OpenParachute, CloseParachute,
+                        PARAMS.BUZZER_ENABLE,
+                        data_path=data_folder+"data_platform.txt")
+    else:
+        ground_cmd.init(None, None, PARAMS.BUZZER_ENABLE,
+                        data_path=data_folder+"data_platform.txt")
 
     # Initialisation des fonctions d'acquisitions
     InitBoard()
@@ -214,23 +230,25 @@ if __name__ == '__main__':
                 if PARAMS.SENSOR_BOARD == '10DOF_V1':
                     ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
                     temp_imu = imu.read_temperature()
-                elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
+                elif PARAMS.SENSOR_BOARD == '10DOF_V2.1':
+                    ax, ay, az = imu.acceleration
+                    gx, gy, gz = imu.gyro
+                    temp_imu = imu.temperature                
+                else: # PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR'
                     ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
                     temp_imu = imu.read_temperature()
                     if mag is not None:
                         mx, my_tmp, mz = mag.read_mag()
                         # Réagencement de l'axe Y du magnetomètre pour correspondre à l'IMU
                         my = -my_tmp
-                        temp_mag = mag.read_temperature()
-                else: # SENSOR_BOARD == '10DOF_V2.1'
-                    ax, ay, az = imu.acceleration
-                    gx, gy, gz = imu.gyro
-                    temp_imu = imu.temperature
+                        temp_mag = mag.read_temperature() 
 
             # Si l'acceleration dépasse le seuil ou que la pin d'accélération est appuyée, et que le décollage n'est pas encore arrivé, il y a eu décollage
             if ((ay < -1-PARAMS.LIFTOFF_IMU_THRESHOLD and PARAMS.LIFTOFF_DET_IMU is True) or (acc_contact is True and PARAMS.LIFTOFF_DET_CONTACT is True)) and (is_launched is False):
                 # Changement de status de l'indicateur de decollage
                 is_launched = True
+                # Verrouille les commandes sol
+                ground_cmd.mark_launched()
                 # Sauvegarde du temps de décollage
                 launch_time = time.ticks_ms()
                 # Changement du son du buzzer

@@ -310,6 +310,18 @@ class TelemetryWS:
         # Headers complets reçus -> finalisation et bascule en client actif.
         self._pending = None
         if self._finalize_handshake(cli, buf):
+            # Un nouveau client WS prend la place : on ferme l'eventuel
+            # client WS precedent uniquement ICI, pas plus tot (sinon une
+            # requete HTTP banale tuerait la session WS de telemetrie).
+            if self._client is not None:
+                try:
+                    self._client.send(bytes((0x88, 0x00)))  # WS Close
+                except OSError:
+                    pass
+                try:
+                    self._client.close()
+                except OSError:
+                    pass
             self._client = cli
             self._rx_buf = b""
             self._log("[TELEM] WS client connected")
@@ -341,15 +353,14 @@ class TelemetryWS:
             return
 
         self._log("[TELEM] incoming client:", addr)
-        # Nouvelle connexion : on annule un éventuel handshake en cours
-        # et on remplace tout client actif.
+        # Nouvelle connexion : on annule un eventuel handshake en cours
+        # (on n'en pipeline pas deux a la fois), mais on NE ferme PAS le
+        # client WS actif : tant qu'on ne sait pas si la nouvelle requete
+        # est un upgrade WS ou une simple requete HTTP (config, /api/cmd
+        # poll, telechargement /api/data), on doit preserver la session
+        # WS de telemetrie en cours. Le drop du WS actif est repousse au
+        # moment ou un nouveau handshake WS reussit (cf. _drive_pending).
         self._abort_pending()
-        if self._client is not None:
-            try:
-                self._client.close()
-            except OSError:
-                pass
-            self._client = None
 
         # Bascule la socket en non-bloquant et démarre la machine à états.
         try:

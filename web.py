@@ -21,6 +21,7 @@ except (ImportError, AttributeError):
     _EAGAIN = 11
 
 import config_store
+import ground_cmd
 
 
 # ---- Validation par champ -----------------------------------------------
@@ -176,6 +177,37 @@ def _send_file(cli, code, ctype, path):
     _send_response(cli, code, ctype, data)
 
 
+def _send_file_download(cli, path, filename):
+    """Stream un fichier en piece jointe (Content-Disposition: attachment).
+    Lecture par chunks pour ne pas exploser la RAM sur les gros logs."""
+    import os
+    try:
+        size = os.stat(path)[6]
+    except OSError:
+        _send_response(cli, 404, b"text/plain; charset=utf-8", "fichier introuvable")
+        return
+    headers = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n"
+        b"Content-Length: " + str(size).encode() + b"\r\n"
+        b"Content-Disposition: attachment; filename=\"" + filename.encode() + b"\"\r\n"
+        b"Connection: close\r\n"
+        b"Cache-Control: no-store\r\n\r\n"
+    )
+    if not _sendall(cli, headers):
+        return
+    try:
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(1024)
+                if not chunk:
+                    break
+                if not _sendall(cli, chunk):
+                    return
+    except OSError:
+        return
+
+
 # ---- Lecture du body POST -----------------------------------------------
 
 def _read_body(cli, already, content_length):
@@ -300,6 +332,58 @@ def _route(cli, raw):
             return
         _send_json(cli, 200, {"ok": True,
                               "note": "valeurs usine au prochain boot"})
+        return
+
+    # ---- Commandes sol --------------------------------------------------
+    if method == b"GET" and path == b"/api/cmd/status":
+        _send_json(cli, 200, {
+            "armed":     ground_cmd.is_armed(),
+            "in_flight": ground_cmd.is_in_flight(),
+            "can_arm":   ground_cmd.can_arm(),
+            "has_servo": ground_cmd.has_servo(),
+        })
+        return
+
+    if method == b"POST" and path == b"/api/cmd/arm":
+        ok = ground_cmd.arm()
+        _send_json(cli, 200 if ok else 409, {
+            "ok": ok, "armed": ground_cmd.is_armed(),
+            "error": None if ok else "armement refusé (en vol ou pas de servo)",
+        })
+        return
+
+    if method == b"POST" and path == b"/api/cmd/disarm":
+        ground_cmd.disarm()
+        _send_json(cli, 200, {"ok": True, "armed": ground_cmd.is_armed()})
+        return
+
+    if method == b"POST" and path == b"/api/cmd/trap":
+        body, err = _read_body(cli, body_start, content_length)
+        if err is not None:
+            _send_json(cli, 400, {"ok": False, "error": err})
+            return
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError):
+            _send_json(cli, 400, {"ok": False, "error": "JSON invalide"})
+            return
+        action = payload.get("action") if isinstance(payload, dict) else None
+        if action == "open":
+            ok = ground_cmd.open_trap()
+        elif action == "close":
+            ok = ground_cmd.close_trap()
+        else:
+            _send_json(cli, 400, {"ok": False,
+                                  "error": "action attendue: open|close"})
+            return
+        _send_json(cli, 200 if ok else 409, {
+            "ok": ok, "action": action,
+            "error": None if ok else "commande refusée (non armé ou en vol)",
+        })
+        return
+
+    if method == b"GET" and path == b"/api/data":
+        _send_file_download(cli, ground_cmd.data_path(), "data_platform.txt")
         return
 
     _send_response(cli, 404, b"text/plain; charset=utf-8", "not found")

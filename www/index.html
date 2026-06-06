@@ -25,11 +25,33 @@
               border-bottom:2px solid transparent; }
   input[name=tab] { display:none; }
   #t_cfg:checked ~ nav label[for=t_cfg],
-  #t_tel:checked ~ nav label[for=t_tel] { color:var(--acc);
+  #t_tel:checked ~ nav label[for=t_tel],
+  #t_cmd:checked ~ nav label[for=t_cmd] { color:var(--acc);
               border-bottom-color:var(--acc); }
   section { display:none; padding:16px; max-width:980px; margin:0 auto; }
   #t_cfg:checked ~ #s_cfg { display:block; }
   #t_tel:checked ~ #s_tel { display:block; }
+  #t_cmd:checked ~ #s_cmd { display:block; }
+  /* Commandes sol */
+  .cmd-armbox { display:flex; align-items:center; justify-content:space-between;
+                gap:14px; padding:14px 16px; border-radius:10px;
+                border:1px solid var(--line); background:var(--panel); }
+  .cmd-armbox.armed { background:var(--acc-soft); border-color:var(--acc); }
+  .cmd-armbox .lbl { font-weight:600; font-size:15px; }
+  .cmd-armbox .lbl small { display:block; color:var(--muted);
+                           font-weight:400; font-size:12px; margin-top:2px; }
+  .cmd-armbox.armed .lbl { color:var(--acc-dark); }
+  .danger-banner { display:none; margin-top:12px; padding:12px 14px;
+                   background:var(--acc); color:#ffffff; border-radius:8px;
+                   font-weight:600; font-size:14px; }
+  .danger-banner.show { display:block; }
+  .danger-banner small { display:block; font-weight:400; font-size:12px;
+                         margin-top:4px; opacity:0.9; }
+  .cmd-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+              gap:10px; margin-top:14px; }
+  .cmd-grid button { width:100%; padding:14px; font-size:15px; }
+  button:disabled { background:#cfcfcf; color:#777; cursor:not-allowed; }
+  button:disabled:hover { background:#cfcfcf; }
   .row { display:flex; align-items:center; justify-content:space-between;
          padding:10px 0; border-bottom:1px solid var(--line); }
   .row:last-child { border-bottom:none; }
@@ -91,12 +113,14 @@
   <div class="meta" id="meta">--</div>
 </header>
 
-<input type="radio" name="tab" id="t_cfg" checked>
-<input type="radio" name="tab" id="t_tel">
+<input type="radio" name="tab" id="t_tel" checked>
+<input type="radio" name="tab" id="t_cmd">
+<input type="radio" name="tab" id="t_cfg">
 
 <nav>
-  <label for="t_cfg">Configuration</label>
   <label for="t_tel">Télémétrie</label>
+  <label for="t_cmd">Commandes</label>
+  <label for="t_cfg">Configuration</label>
 </nav>
 
 <section id="s_cfg">
@@ -188,6 +212,42 @@
   <canvas id="spark" width="800" height="80"></canvas>
   <p class="hint">Un seul client WebSocket à la fois : fermer cet onglet
      avant de lancer NectarMC.</p>
+</section>
+
+<section id="s_cmd">
+  <div class="grp">
+    <h3>Mode sol</h3>
+    <div class="cmd-armbox" id="armBox">
+      <div class="lbl" id="armLbl">Commandes verrouillées
+        <small>Aucune action mécanique ne sera exécutée tant que les
+               commandes sont verrouillées.</small></div>
+      <button id="btnArm">Déverrouiller</button>
+    </div>
+    <div class="danger-banner" id="dangerBanner">
+      ⚠ MODE SOL ACTIF — Le buzzer émet un signal d'alerte.
+      <small>Les commandes mécaniques sont armées. Verrouiller avant le
+             décollage. Le décollage verrouille automatiquement.</small>
+    </div>
+  </div>
+
+  <div class="grp">
+    <h3>Trappe parachute</h3>
+    <div class="cmd-grid">
+      <button class="secondary" id="btnOpen" disabled>Ouvrir la trappe</button>
+      <button class="secondary" id="btnClose" disabled>Fermer la trappe</button>
+    </div>
+    <p class="hint">Réservé aux essais et au réglage du servo au sol.</p>
+  </div>
+
+  <div class="grp">
+    <h3>Données de vol</h3>
+    <div class="cmd-grid">
+      <button class="secondary" id="btnDownload">Télécharger data_platform.txt</button>
+    </div>
+    <p class="hint">Le fichier contient toutes les acquisitions de chaque vol.</p>
+  </div>
+
+  <div id="cmdFeedback"></div>
 </section>
 
 <script>
@@ -383,6 +443,121 @@ function connectWS() {
   };
 }
 connectWS();
+
+// ---- Commandes sol ------------------------------------------------------
+const armBox       = document.getElementById("armBox");
+const armLbl       = document.getElementById("armLbl");
+const btnArm       = document.getElementById("btnArm");
+const btnOpen      = document.getElementById("btnOpen");
+const btnClose     = document.getElementById("btnClose");
+const btnDownload  = document.getElementById("btnDownload");
+const dangerBanner = document.getElementById("dangerBanner");
+const cmdFeedback  = document.getElementById("cmdFeedback");
+let cmdState = {armed:false, in_flight:false, can_arm:true, has_servo:true};
+
+function showCmdFeedback(msg, ok) {
+  cmdFeedback.textContent = msg;
+  cmdFeedback.id = "cmdFeedback"; // garde l'id
+  cmdFeedback.className = ok ? "ok" : "ko";
+  // Réutilise les styles #feedback en cloning sa logique : on applique
+  // directement les classes via la palette existante.
+  cmdFeedback.style.cssText =
+    "margin-top:12px;padding:10px 12px;border-radius:6px;font-size:14px;" +
+    (ok
+      ? "background:#e6f4ec;color:#155d33;border-left:3px solid var(--ok);"
+      : "background:var(--acc-soft);color:var(--acc-dark);border-left:3px solid var(--acc);");
+}
+
+function refreshCmdUI() {
+  const armed    = cmdState.armed;
+  const inFlight = cmdState.in_flight;
+  armBox.classList.toggle("armed", armed);
+  dangerBanner.classList.toggle("show", armed);
+  if (inFlight) {
+    armLbl.innerHTML = "Verrouillage en vol<small>Décollage détecté : " +
+      "les commandes sol sont définitivement désactivées jusqu'au prochain " +
+      "redémarrage de la carte.</small>";
+    btnArm.disabled = true;
+    btnArm.textContent = "Verrouillé (en vol)";
+  } else if (armed) {
+    armLbl.innerHTML = "Mode sol actif<small>Buzzer en alerte. Verrouiller " +
+      "avant le décollage.</small>";
+    btnArm.disabled = false;
+    btnArm.textContent = "Verrouiller";
+  } else {
+    armLbl.innerHTML = "Commandes verrouillées<small>Aucune action " +
+      "mécanique ne sera exécutée tant que les commandes sont verrouillées." +
+      "</small>";
+    btnArm.disabled = !cmdState.can_arm;
+    btnArm.textContent = cmdState.has_servo ? "Déverrouiller" : "Aucun servo";
+  }
+  btnOpen.disabled  = !armed || inFlight;
+  btnClose.disabled = !armed || inFlight;
+}
+
+async function pollCmdStatus() {
+  try {
+    const r = await fetch("/api/cmd/status");
+    cmdState = await r.json();
+    refreshCmdUI();
+  } catch (e) { /* ignore : sera retenté */ }
+}
+
+async function postCmd(url, body) {
+  try {
+    const opts = {method: "POST"};
+    if (body) {
+      opts.headers = {"Content-Type": "application/json"};
+      opts.body = JSON.stringify(body);
+    }
+    const r = await fetch(url, opts);
+    const j = await r.json();
+    if (j.ok) {
+      // refresh status pour synchroniser l'UI avec l'état réel
+      if ("armed" in j) cmdState.armed = j.armed;
+      refreshCmdUI();
+      return {ok: true, j};
+    }
+    showCmdFeedback("✗ " + (j.error || "refusé"), false);
+    return {ok: false, j};
+  } catch (e) {
+    showCmdFeedback("Réseau : " + e, false);
+    return {ok: false};
+  }
+}
+
+btnArm.addEventListener("click", async () => {
+  if (cmdState.armed) {
+    await postCmd("/api/cmd/disarm");
+    showCmdFeedback("Commandes verrouillées.", true);
+  } else {
+    if (!confirm("Déverrouiller les commandes sol ?\n\n" +
+                 "Le buzzer va émettre un signal d'alerte. " +
+                 "Verrouiller avant le décollage.")) return;
+    const res = await postCmd("/api/cmd/arm");
+    if (res.ok) showCmdFeedback("Mode sol actif. Buzzer en alerte.", true);
+  }
+});
+btnOpen .addEventListener("click", async () => {
+  const res = await postCmd("/api/cmd/trap", {action: "open"});
+  if (res.ok) showCmdFeedback("Trappe : commande d'ouverture envoyée.", true);
+});
+btnClose.addEventListener("click", async () => {
+  const res = await postCmd("/api/cmd/trap", {action: "close"});
+  if (res.ok) showCmdFeedback("Trappe : commande de fermeture envoyée.", true);
+});
+btnDownload.addEventListener("click", () => {
+  // Force un download navigateur via un lien ephemere.
+  const a = document.createElement("a");
+  a.href = "/api/data";
+  a.download = "data_platform.txt";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
+pollCmdStatus();
+setInterval(pollCmdStatus, 3000);
 </script>
 </body>
 </html>
