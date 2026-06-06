@@ -16,6 +16,7 @@ from lib.xis2mdx import xIS2MDx
 from cu import *
 from buzzer import *
 from telemetry import TelemetryWS
+from captive_dns import CaptiveDNS
 import ground_cmd
 import parameters as PARAMS
 
@@ -183,6 +184,7 @@ if __name__ == '__main__':
 
     # Initialisation de la télémétrie Nectar (WiFi AP + WS serveur)
     telem = None
+    cdns = None
     if PARAMS.TELEMETRY_ENABLE:
         telem = TelemetryWS(
             ssid_prefix=PARAMS.TELEMETRY_AP_SSID_PREFIX,
@@ -197,6 +199,11 @@ if __name__ == '__main__':
             debug=PARAMS.DEBUG
         )
         telem.start()
+        # DNS captif : redirige toute resolution vers nous, declenche le
+        # popup "Se connecter au reseau" des OS et ouvre automatiquement
+        # la page web a la connexion au wifi.
+        cdns = CaptiveDNS("192.168.4.1", debug=PARAMS.DEBUG)
+        cdns.start()
 
     # Ouvre un fichier pour l'écriture des données
     InitPlatFile()
@@ -341,3 +348,13 @@ if __name__ == '__main__':
                     print(f'Temperature:   T = {temp:.2f} dC / IMU = {temp_imu:.2f} dC / MAG = {temp_mag:.2f} dC')
                 print(f'Acc contact:   {acc_contact:.1d}')
                 time.sleep(0.250)
+            
+            ###############
+            # System code
+            # Do not touch
+            ###############
+
+            # Traite les requetes DNS captives (auto-popup de la page web
+            # a la connexion wifi). Non bloquant.
+            if cdns is not None:
+                cdns.poll()

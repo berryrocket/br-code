@@ -140,9 +140,11 @@ def _sendall(cli, data):
 def _send_response(cli, code, ctype, body, extra_headers=b""):
     status = {
         200: b"200 OK",
+        302: b"302 Found",
         400: b"400 Bad Request",
         404: b"404 Not Found",
         405: b"405 Method Not Allowed",
+        409: b"409 Conflict",
         413: b"413 Payload Too Large",
         500: b"500 Internal Server Error",
     }.get(code, b"500 Internal Server Error")
@@ -384,6 +386,16 @@ def _route(cli, raw):
 
     if method == b"GET" and path == b"/api/data":
         _send_file_download(cli, ground_cmd.data_path(), "data_platform.txt")
+        return
+
+    # ---- Captive portal -------------------------------------------------
+    # Toute requete inconnue (typiquement une sonde OS qui a ete redirigee
+    # vers nous par le hijack DNS) est redirigee vers /. C'est ce qui fait
+    # apparaitre automatiquement la page web au moment de la connexion wifi.
+    if method == b"GET":
+        _send_response(cli, 302, b"text/plain; charset=utf-8",
+                       "captive portal",
+                       extra_headers=b"Location: http://192.168.4.1/\r\n")
         return
 
     _send_response(cli, 404, b"text/plain; charset=utf-8", "not found")

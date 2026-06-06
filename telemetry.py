@@ -244,8 +244,11 @@ class TelemetryWS:
                     except OSError:
                         pass
                 return False
+            # Verbe HTTP inconnu (HEAD, CONNECT...) -> redirect captif
+            # vers la page de config pour declencher le portail OS.
             try:
-                cli.send(b"HTTP/1.1 204 No Content\r\n"
+                cli.send(b"HTTP/1.1 302 Found\r\n"
+                         b"Location: http://192.168.4.1/\r\n"
                          b"Content-Length: 0\r\n"
                          b"Connection: close\r\n\r\n")
             except OSError:
