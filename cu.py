@@ -1,7 +1,9 @@
-# Berryrocket project
+########################################
+#### BerryRocket ####
 # On-board Payload code
-# Licence CC-BY-NC-SA
 # Louis Barbier
+# Licence CC-BY-NC-SA
+########################################
 
 # Exécute les actions de la charge utile au démarrage de la carte
 def CU_Initialisation(baro, imu):

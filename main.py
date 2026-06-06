@@ -27,7 +27,8 @@ if PARAMS.MOTHER_BOARD == "BR_MINI_AVIONIC":
 elif PARAMS.MOTHER_BOARD == "BR_MICRO_AVIONIC": 
     i2c = I2C(0, sda = Pin(4), scl = Pin(5), freq = 400000) #i2c detains
 else:
-    print("/!\\ La carte mère sélectionnée n'est pas référencée !\n")
+    print("[ATTENTION] La carte mère sélectionnée n'est pas référencée !")
+    print("            Changer les paramètres - Mise off de la carte par sécurité")
     exit(1)
 
 # Declaration des capteurs
@@ -43,10 +44,13 @@ else:
         imu = MPU9250(i2c=i2c)
     elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
         imu = LSM6DSx(i2c_bus=i2c)
-        mag = xIS2MDx(i2c_bus=i2c)
+        if 0x1E in i2c.scan():
+            mag = xIS2MDx(i2c_bus=i2c)
+        else:
+            mag = None
     else:
-        print("Attention: la carte sensor sélectionnée ne correspond pas à une carte connue") 
-        print("Selection par défaut de la carte BR-MINI-SENSOR")
+        print("[ATTENTION] La carte sensor sélectionnée ne correspond pas à une carte connue") 
+        print("            Sélection par défaut de la carte BR-MINI-SENSOR")
         PARAMS.SENSOR_BOARD = 'BR_MINI_SENSOR'
         imu = MPU9250(i2c=i2c)
 
@@ -118,7 +122,7 @@ def InitPlatFile():
     platform_file.write(f"## Fenetrage temporel : {PARAMS.TIMEOUT_APOGEE:d} ms\n")
     platform_file.write(f"## Frequence acq données: {PARAMS.FREQ_ACQ:d} Hz\n")
     platform_file.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] "),
-    platform_file.write(f"| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [gauss] | mag Y [gauss] | mag Z [gauss]\n")
+    platform_file.write(f"| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [Gauss] | mag Y [Gauss] | mag Z [Gauss]\n")
     platform_file.close()
 
 # Activation de l'acquisition des données
@@ -212,11 +216,12 @@ if __name__ == '__main__':
                     temp_imu = imu.read_temperature()
                 elif PARAMS.SENSOR_BOARD == 'BR_MINI_SENSOR':
                     ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
-                    mx, my_tmp, mz = mag.read_mag()
-                    # Réagencement de l'axe Y du magnetomètre pour correspondre à l'IMU
-                    my = -my_tmp
                     temp_imu = imu.read_temperature()
-                    temp_mag = mag.read_temperature()
+                    if mag is not None:
+                        mx, my_tmp, mz = mag.read_mag()
+                        # Réagencement de l'axe Y du magnetomètre pour correspondre à l'IMU
+                        my = -my_tmp
+                        temp_mag = mag.read_temperature()
                 else: # SENSOR_BOARD == '10DOF_V2.1'
                     ax, ay, az = imu.acceleration
                     gx, gy, gz = imu.gyro

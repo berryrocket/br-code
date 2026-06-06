@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BerryRocket Avionic</title>
+<style>
+  /* Palette BerryRocket : framboise #BC1544 sur fond clair (cf. berryrocket.com). */
+  :root {
+    --bg:#ffffff; --panel:#f5f5f5; --line:#e5e5e5; --txt:#111111;
+    --muted:#6b6b6b; --acc:#BC1544; --acc-dark:#8e0f33; --acc-soft:#fde6ec;
+    --ok:#1f8a4c; --ko:#BC1544; --warn:#d9881a;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         background:var(--bg); color:var(--txt); }
+  header { padding:14px 16px; background:#ffffff; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; justify-content:space-between; }
+  header h1 { margin:0; font-size:18px; font-weight:700; letter-spacing:-0.2px; }
+  header h1 span { color:var(--acc); }
+  header .meta { font-size:12px; color:var(--muted); }
+  nav { display:flex; background:#ffffff; border-bottom:1px solid var(--line); }
+  nav label { flex:1; padding:12px; text-align:center; cursor:pointer;
+              color:var(--muted); font-weight:500;
+              border-bottom:2px solid transparent; }
+  input[name=tab] { display:none; }
+  #t_cfg:checked ~ nav label[for=t_cfg],
+  #t_tel:checked ~ nav label[for=t_tel] { color:var(--acc);
+              border-bottom-color:var(--acc); }
+  section { display:none; padding:16px; max-width:980px; margin:0 auto; }
+  #t_cfg:checked ~ #s_cfg { display:block; }
+  #t_tel:checked ~ #s_tel { display:block; }
+  .row { display:flex; align-items:center; justify-content:space-between;
+         padding:10px 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:none; }
+  .row label { color:#333; font-size:14px; }
+  .row .ctrl { display:flex; gap:8px; align-items:center; }
+  input[type=number], input[type=text], select {
+    background:#ffffff; color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:6px 10px; min-width:180px; font:inherit; }
+  input[type=number]:focus, input[type=text]:focus, select:focus {
+    outline:none; border-color:var(--acc); box-shadow:0 0 0 3px var(--acc-soft); }
+  input[type=checkbox] { width:20px; height:20px; accent-color:var(--acc); }
+  .actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  button { background:var(--acc); color:#ffffff; border:none; border-radius:6px;
+           padding:10px 18px; font-weight:600; cursor:pointer; font:inherit;
+           transition: background 0.15s; }
+  button:hover { background:var(--acc-dark); }
+  button.secondary { background:#ffffff; color:var(--txt); border:1px solid var(--line); }
+  button.secondary:hover { background:#fafafa; border-color:#cfcfcf; }
+  #feedback { margin-top:12px; padding:10px 12px; border-radius:6px; display:none; font-size:14px; }
+  #feedback.ok { display:block; background:#e6f4ec; color:#155d33;
+                 border-left:3px solid var(--ok); }
+  #feedback.ko { display:block; background:var(--acc-soft); color:var(--acc-dark);
+                 border-left:3px solid var(--acc); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+          gap:10px; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+          padding:10px; }
+  .tile .k { font-size:11px; color:var(--muted); text-transform:uppercase;
+             letter-spacing:0.5px; }
+  .tile .v { font-size:18px; font-family: ui-monospace, "Consolas", monospace;
+             margin-top:4px; color:var(--txt); }
+  .leds { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .led { display:flex; align-items:center; gap:8px; background:var(--panel);
+         padding:8px 14px; border-radius:999px; border:1px solid var(--line); font-size:13px; }
+  .dot { width:12px; height:12px; border-radius:50%; background:#cfcfcf; }
+  .dot.on.launched { background:var(--warn); box-shadow:0 0 8px var(--warn); }
+  .dot.on.falling  { background:var(--acc);  box-shadow:0 0 8px var(--acc); }
+  .dot.on.contact  { background:var(--ok);   box-shadow:0 0 8px var(--ok); }
+  #wsStatus { font-size:12px; color:var(--muted); margin-bottom:10px; }
+  #wsStatus.ok { color:var(--ok); }
+  #wsStatus.ko { color:var(--acc); }
+  canvas { width:100%; height:80px; background:var(--panel); border:1px solid var(--line);
+           border-radius:8px; margin-top:6px; display:block; }
+  .chart-title { display:flex; align-items:baseline; gap:10px; margin-top:20px;
+                 padding-bottom:2px; }
+  .chart-title h2 { margin:0; font-size:16px; font-weight:700; color:var(--txt); }
+  .chart-title .sub { font-size:12px; color:var(--muted); font-family: ui-monospace, "Consolas", monospace; }
+  .hint { color:var(--muted); font-size:12px; margin-top:14px; }
+  .grp { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+         padding:8px 16px; margin-bottom:14px; }
+  .grp h3 { margin:10px 0 6px; font-size:12px; color:var(--acc); text-transform:uppercase;
+            letter-spacing:0.6px; font-weight:700; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Berry<span>Rocket</span></h1>
+  <div class="meta" id="meta">--</div>
+</header>
+
+<input type="radio" name="tab" id="t_cfg" checked>
+<input type="radio" name="tab" id="t_tel">
+
+<nav>
+  <label for="t_cfg">Configuration</label>
+  <label for="t_tel">Télémétrie</label>
+</nav>
+
+<section id="s_cfg">
+  <div class="grp">
+    <h3>Matériel</h3>
+    <div class="row"><label>Carte mère</label><div class="ctrl">
+      <select id="MOTHER_BOARD">
+        <option value="BR_MINI_AVIONIC">BR_MINI_AVIONIC</option>
+        <option value="BR_MICRO_AVIONIC">BR_MICRO_AVIONIC</option>
+      </select></div></div>
+    <div class="row"><label>Carte capteurs</label><div class="ctrl">
+      <select id="SENSOR_BOARD">
+        <option value="NONE">NONE</option>
+        <option value="10DOF_V1">10DOF_V1</option>
+        <option value="10DOF_V2.1">10DOF_V2.1</option>
+        <option value="BR_MINI_SENSOR">BR_MINI_SENSOR</option>
+      </select></div></div>
+  </div>
+
+  <div class="grp">
+    <h3>Détection de décollage</h3>
+    <div class="row"><label>Détection par IMU</label><div class="ctrl">
+      <input type="checkbox" id="LIFTOFF_DET_IMU"></div></div>
+    <div class="row"><label>Détection par contacteur (accéléro-contact)</label><div class="ctrl">
+      <input type="checkbox" id="LIFTOFF_DET_CONTACT"></div></div>
+    <div class="row"><label>Seuil accélération IMU [g]</label><div class="ctrl">
+      <input type="number" id="LIFTOFF_IMU_THRESHOLD" min="1.0" max="10.0" step="0.1"></div></div>
+    <div class="row"><label>Temps apogée [ms]</label><div class="ctrl">
+      <input type="number" id="TIMEOUT_APOGEE" min="1000" max="30000" step="100"></div></div>
+  </div>
+
+  <div class="grp">
+    <h3>Trappe parachute / éjection</h3>
+    <div class="row"><label>Charge de dépotage / d'éjection (sans trappe)</label><div class="ctrl">
+      <input type="checkbox" id="EJECTION_CHARGE"></div></div>
+    <div class="row"><label>Servo ouvert [us]</label><div class="ctrl">
+      <input type="number" id="SERVO_OPEN" min="500" max="2500" step="10"></div></div>
+    <div class="row"><label>Servo fermé [us]</label><div class="ctrl">
+      <input type="number" id="SERVO_CLOSE" min="500" max="2500" step="10"></div></div>
+  </div>
+
+  <div class="grp">
+    <h3>Divers</h3>
+    <div class="row"><label>Buzzer actif</label><div class="ctrl">
+      <input type="checkbox" id="BUZZER_ENABLE"></div></div>
+    <div class="row"><label>Télémétrie activée</label><div class="ctrl">
+      <input type="checkbox" id="TELEMETRY_ENABLE"></div></div>
+    <div class="row"><label>Numéro SSID télémétrie (0-255, vide=auto)</label><div class="ctrl">
+      <input type="number" id="TELEMETRY_SSID_NUM" min="0" max="255" step="1"></div></div>
+  </div>
+
+  <div class="actions">
+    <button id="btnSave">Enregistrer</button>
+    <button class="secondary" id="btnReset">Réinitialiser usine</button>
+  </div>
+  <div id="feedback"></div>
+  <p class="hint">Les changements s'appliquent au prochain démarrage de l'avionique
+     (couper puis rallumer).</p>
+</section>
+
+<section id="s_tel">
+  <div id="wsStatus">WebSocket : déconnecté</div>
+  <div class="leds">
+    <div class="led"><span class="dot launched" id="led_launched"></span> Décollage</div>
+    <div class="led"><span class="dot falling"  id="led_falling"></span> Chute libre</div>
+    <div class="led"><span class="dot contact"  id="led_contact"></span> Contacteur</div>
+  </div>
+  <div class="grid">
+    <div class="tile"><div class="k">Temps</div><div class="v" id="v_t">--</div></div>
+    <div class="tile"><div class="k">Pression [mbar]</div><div class="v" id="v_p">--</div></div>
+    <div class="tile"><div class="k">Température [°C]</div><div class="v" id="v_temp">--</div></div>
+    <div class="tile"><div class="k">|a| [g]</div><div class="v" id="v_an">--</div></div>
+    <div class="tile"><div class="k">ax [g]</div><div class="v" id="v_ax">--</div></div>
+    <div class="tile"><div class="k">ay [g]</div><div class="v" id="v_ay">--</div></div>
+    <div class="tile"><div class="k">az [g]</div><div class="v" id="v_az">--</div></div>
+    <div class="tile"><div class="k">gx [dps]</div><div class="v" id="v_gx">--</div></div>
+    <div class="tile"><div class="k">gy [dps]</div><div class="v" id="v_gy">--</div></div>
+    <div class="tile"><div class="k">gz [dps]</div><div class="v" id="v_gz">--</div></div>
+    <div class="tile"><div class="k">mx [Gauss]</div><div class="v" id="v_mx">--</div></div>
+    <div class="tile"><div class="k">my [Gauss]</div><div class="v" id="v_my">--</div></div>
+    <div class="tile"><div class="k">mz [Gauss]</div><div class="v" id="v_mz">--</div></div>
+    <div class="tile"><div class="k">Temp IMU [°C]</div><div class="v" id="v_ti">--</div></div>
+    <div class="tile"><div class="k">Temp MAG [°C]</div><div class="v" id="v_tm">--</div></div>
+  </div>
+  <div class="chart-title">
+    <h2>Norme de l'accélération |a|</h2>
+    <span class="sub">[g]</span>
+  </div>
+  <canvas id="spark" width="800" height="80"></canvas>
+  <p class="hint">Un seul client WebSocket à la fois : fermer cet onglet
+     avant de lancer NectarMC.</p>
+</section>
+
+<script>
+// ---- Config tab ---------------------------------------------------------
+const BOOL_KEYS = ["EJECTION_CHARGE","LIFTOFF_DET_IMU","LIFTOFF_DET_CONTACT",
+                   "BUZZER_ENABLE","TELEMETRY_ENABLE"];
+const NUM_KEYS  = ["LIFTOFF_IMU_THRESHOLD","TIMEOUT_APOGEE","SERVO_OPEN",
+                   "SERVO_CLOSE","TELEMETRY_SSID_NUM"];
+const STR_KEYS  = ["MOTHER_BOARD","SENSOR_BOARD"];
+
+function showFeedback(msg, ok) {
+  const el = document.getElementById("feedback");
+  el.textContent = msg;
+  el.className = ok ? "ok" : "ko";
+}
+
+async function loadConfig() {
+  try {
+    const r = await fetch("/api/config");
+    const j = await r.json();
+    const v = j.values || {};
+    STR_KEYS.forEach(k => { if (v[k] != null) document.getElementById(k).value = v[k]; });
+    NUM_KEYS.forEach(k => {
+      const el = document.getElementById(k);
+      el.value = v[k] == null ? "" : v[k];
+    });
+    BOOL_KEYS.forEach(k => { document.getElementById(k).checked = !!v[k]; });
+    if (j.meta) {
+      document.getElementById("meta").textContent =
+        "v" + (j.meta.soft_version || "?") +
+        " | Acquisition " + (j.meta.freq_acq || "?") + " Hz" +
+        " | Télémétrie " + (j.meta.rate_hz || "?") + " Hz";
+    }
+  } catch (e) {
+    showFeedback("Lecture config impossible : " + e, false);
+  }
+}
+
+async function saveConfig() {
+  const payload = {};
+  STR_KEYS.forEach(k => payload[k] = document.getElementById(k).value);
+  BOOL_KEYS.forEach(k => payload[k] = document.getElementById(k).checked);
+  NUM_KEYS.forEach(k => {
+    const raw = document.getElementById(k).value;
+    if (k === "TELEMETRY_SSID_NUM" && raw === "") { payload[k] = null; return; }
+    if (raw === "") return;
+    payload[k] = (k === "LIFTOFF_IMU_THRESHOLD") ? parseFloat(raw) : parseInt(raw, 10);
+  });
+  try {
+    const r = await fetch("/api/config", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json();
+    if (j.ok) showFeedback("Enregistré. Redémarrer l'avionique pour appliquer.", true);
+    else     showFeedback("Erreur : " + (j.error || "inconnue"), false);
+  } catch (e) {
+    showFeedback("Réseau : " + e, false);
+  }
+}
+
+async function resetConfig() {
+  if (!confirm("Effacer la configuration et revenir aux valeurs usine ?")) return;
+  try {
+    const r = await fetch("/api/config/reset", {method: "POST"});
+    const j = await r.json();
+    if (j.ok) { showFeedback("Reset OK. Redémarrer l'avionique.", true); loadConfig(); }
+    else      { showFeedback("Erreur : " + (j.error || "inconnue"), false); }
+  } catch (e) {
+    showFeedback("Réseau : " + e, false);
+  }
+}
+
+document.getElementById("btnSave").addEventListener("click", saveConfig);
+document.getElementById("btnReset").addEventListener("click", resetConfig);
+loadConfig();
+
+// ---- Telemetry tab ------------------------------------------------------
+// Format trame Nectar : MAGIC(1) + mission(2) + len(1) + payload(57) + CRC(2) = 63 octets.
+// Payload <I 13f B : time_ms, pressure, temp, ax, ay, az, gx, gy, gz, mx, my, mz,
+//                    temp_imu, temp_mag, flags
+const sparkCanvas = document.getElementById("spark");
+const sparkCtx = sparkCanvas.getContext("2d");
+const SPARK_N = 200;
+const sparkHist = new Float32Array(SPARK_N);
+let sparkIdx = 0, sparkFilled = 0;
+
+function drawSpark() {
+  const w = sparkCanvas.clientWidth, h = sparkCanvas.clientHeight;
+  if (sparkCanvas.width !== w) sparkCanvas.width = w;
+  sparkCtx.clearRect(0, 0, w, h);
+  let mn = Infinity, mx = -Infinity;
+  const n = sparkFilled;
+  if (n < 2) return;
+  for (let i = 0; i < n; i++) {
+    const v = sparkHist[i];
+    if (v < mn) mn = v; if (v > mx) mx = v;
+  }
+  if (mx - mn < 0.1) { mx = mn + 0.1; }
+  sparkCtx.strokeStyle = "#BC1544";
+  sparkCtx.lineWidth = 1.5;
+  sparkCtx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const idx = (sparkIdx - n + i + SPARK_N) % SPARK_N;
+    const v = sparkHist[idx];
+    const x = (i / (n - 1)) * w;
+    const y = h - ((v - mn) / (mx - mn)) * (h - 6) - 3;
+    if (i === 0) sparkCtx.moveTo(x, y); else sparkCtx.lineTo(x, y);
+  }
+  sparkCtx.stroke();
+}
+
+function setVal(id, v, digits) {
+  document.getElementById(id).textContent =
+    (typeof v === "number" && isFinite(v)) ? v.toFixed(digits) : "--";
+}
+
+function decodeFrame(buf) {
+  // buf est ArrayBuffer. On accepte 63 octets (Nectar complète) ou seulement
+  // le payload si jamais la trame change. On détecte par la présence de MAGIC=0xEB.
+  const dv = new DataView(buf);
+  let off = 0;
+  if (dv.getUint8(0) === 0xEB && buf.byteLength >= 63) {
+    off = 4; // skip MAGIC(1) + mission(2) + len(1)
+  }
+  if (buf.byteLength < off + 57) return null;
+  const t = dv.getUint32(off, true); off += 4;
+  const p   = dv.getFloat32(off, true); off += 4;
+  const T   = dv.getFloat32(off, true); off += 4;
+  const ax  = dv.getFloat32(off, true); off += 4;
+  const ay  = dv.getFloat32(off, true); off += 4;
+  const az  = dv.getFloat32(off, true); off += 4;
+  const gx  = dv.getFloat32(off, true); off += 4;
+  const gy  = dv.getFloat32(off, true); off += 4;
+  const gz  = dv.getFloat32(off, true); off += 4;
+  const mx  = dv.getFloat32(off, true); off += 4;
+  const my  = dv.getFloat32(off, true); off += 4;
+  const mz  = dv.getFloat32(off, true); off += 4;
+  const ti  = dv.getFloat32(off, true); off += 4;
+  const tm  = dv.getFloat32(off, true); off += 4;
+  const fl  = dv.getUint8(off);
+  return {t,p,T,ax,ay,az,gx,gy,gz,mx,my,mz,ti,tm,fl};
+}
+
+let ws = null;
+function setWsStatus(txt, cls) {
+  const el = document.getElementById("wsStatus");
+  el.textContent = "WebSocket : " + txt;
+  el.className = cls || "";
+}
+
+function connectWS() {
+  try {
+    ws = new WebSocket("ws://" + location.host);
+    ws.binaryType = "arraybuffer";
+  } catch (e) {
+    setWsStatus("erreur " + e, "ko");
+    setTimeout(connectWS, 2000);
+    return;
+  }
+  ws.onopen    = () => setWsStatus("connecté", "ok");
+  ws.onclose   = () => { setWsStatus("déconnecté, retry...", "ko");
+                         setTimeout(connectWS, 2000); };
+  ws.onerror   = () => setWsStatus("erreur réseau", "ko");
+  ws.onmessage = (ev) => {
+    if (!(ev.data instanceof ArrayBuffer)) return;
+    const f = decodeFrame(ev.data);
+    if (!f) return;
+    setVal("v_t",    f.t / 1000, 2);
+    setVal("v_p",    f.p, 2);
+    setVal("v_temp", f.T, 1);
+    setVal("v_ax",   f.ax, 2);
+    setVal("v_ay",   f.ay, 2);
+    setVal("v_az",   f.az, 2);
+    setVal("v_gx",   f.gx, 2);
+    setVal("v_gy",   f.gy, 2);
+    setVal("v_gz",   f.gz, 2);
+    setVal("v_mx",   f.mx, 2);
+    setVal("v_my",   f.my, 2);
+    setVal("v_mz",   f.mz, 2);
+    setVal("v_ti",   f.ti, 1);
+    setVal("v_tm",   f.tm, 1);
+    const an = Math.sqrt(f.ax*f.ax + f.ay*f.ay + f.az*f.az);
+    setVal("v_an", an, 2);
+    sparkHist[sparkIdx] = an;
+    sparkIdx = (sparkIdx + 1) % SPARK_N;
+    if (sparkFilled < SPARK_N) sparkFilled++;
+    drawSpark();
+    document.getElementById("led_launched").classList.toggle("on", (f.fl & 1) !== 0);
+    document.getElementById("led_falling" ).classList.toggle("on", (f.fl & 2) !== 0);
+    document.getElementById("led_contact" ).classList.toggle("on", (f.fl & 4) !== 0);
+  };
+}
+connectWS();
+</script>
+</body>
+</html>

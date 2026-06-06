@@ -227,9 +227,23 @@ class TelemetryWS:
                     key = value.strip()
                     break
         if key is None:
-            # Pas un upgrade WebSocket : sonde captive portal de l'OS
-            # (msftconnecttest, gstatic, captive.apple.com). On répond 204
-            # pour que l'OS arrête de spammer.
+            # Pas un upgrade WebSocket. Deux cas :
+            #  - vraie requête HTTP (GET/POST) -> page de config / API JSON
+            #    servie par web.py sur la même socket (même port que le WS).
+            #  - sonde captive-portal de l'OS -> 204 pour faire taire l'OS.
+            if buf.startswith(b"GET ") or buf.startswith(b"POST "):
+                try:
+                    import web
+                    web.handle(cli, buf)
+                except Exception as e:
+                    self._log("[TELEM] web handler error:", e)
+                    try:
+                        cli.send(b"HTTP/1.1 500 Internal Server Error\r\n"
+                                 b"Content-Length: 0\r\n"
+                                 b"Connection: close\r\n\r\n")
+                    except OSError:
+                        pass
+                return False
             try:
                 cli.send(b"HTTP/1.1 204 No Content\r\n"
                          b"Content-Length: 0\r\n"

@@ -1,0 +1,305 @@
+########################################
+#### BerryRocket ####
+# Mini routeur HTTP servi sur le meme port que le WebSocket telemetrie.
+# Sert la page de config/visualisation (www/index.html) et l'API JSON
+# qui lit/ecrit l'overlay config.json.
+# Louis Barbier
+# Licence CC-BY-NC-SA
+########################################
+#
+# Pas d'auth : l'AP WiFi de la fusee est ephemere et l'acces physique
+# (etre a portee radio au sol) est l'unique controle. Suffisant pour
+# du materiel pedagogique trimballe en classe.
+
+import json
+import time
+
+try:
+    import errno
+    _EAGAIN = errno.EAGAIN
+except (ImportError, AttributeError):
+    _EAGAIN = 11
+
+import config_store
+
+
+# ---- Validation par champ -----------------------------------------------
+# Chaque entree : (type_python, validateur_optionnel).
+# Le validateur recoit la valeur deja castee et retourne True si OK.
+
+def _in_range(lo, hi):
+    return lambda v: lo <= v <= hi
+
+def _one_of(*choices):
+    return lambda v: v in choices
+
+_SCHEMA = {
+    "MOTHER_BOARD":          (str,   _one_of("BR_MINI_AVIONIC", "BR_MICRO_AVIONIC")),
+    "SENSOR_BOARD":          (str,   _one_of("NONE", "10DOF_V1", "10DOF_V2.1", "BR_MINI_SENSOR")),
+    "EJECTION_CHARGE":       (bool,  None),
+    "LIFTOFF_DET_IMU":       (bool,  None),
+    "LIFTOFF_DET_CONTACT":   (bool,  None),
+    "LIFTOFF_IMU_THRESHOLD": (float, _in_range(1.0, 10.0)),
+    "TIMEOUT_APOGEE":        (int,   _in_range(1000, 30000)),
+    "SERVO_OPEN":            (int,   _in_range(500, 2500)),
+    "SERVO_CLOSE":           (int,   _in_range(500, 2500)),
+    "BUZZER_ENABLE":         (bool,  None),
+    "TELEMETRY_ENABLE":      (bool,  None),
+    # TELEMETRY_SSID_NUM peut etre null -> traite separement.
+    "TELEMETRY_SSID_NUM":    (int,   _in_range(0, 255)),
+}
+
+
+def _validate(d):
+    """Valide et caste. Retourne (clean_dict, error_str_ou_None)."""
+    clean = {}
+    for k, v in d.items():
+        if k not in _SCHEMA:
+            continue  # ignore silencieusement les cles inconnues
+        if k == "TELEMETRY_SSID_NUM" and v is None:
+            clean[k] = None
+            continue
+        typ, check = _SCHEMA[k]
+        try:
+            if typ is bool:
+                if not isinstance(v, bool):
+                    return None, "type invalide pour {}".format(k)
+                cast = v
+            elif typ is float:
+                cast = float(v)
+            elif typ is int:
+                # On refuse les bool implicitement convertis (True == 1).
+                if isinstance(v, bool):
+                    return None, "type invalide pour {}".format(k)
+                cast = int(v)
+            else:  # str
+                if not isinstance(v, str):
+                    return None, "type invalide pour {}".format(k)
+                cast = v
+        except (TypeError, ValueError):
+            return None, "type invalide pour {}".format(k)
+        if check is not None and not check(cast):
+            return None, "valeur hors bornes pour {}".format(k)
+        clean[k] = cast
+    return clean, None
+
+
+# ---- Snapshot de la config courante -------------------------------------
+
+def _current_config():
+    """Lit les valeurs effectives depuis parameters.py (overlay deja
+    applique au boot) + quelques metas pour l'UI."""
+    import parameters as P
+    snap = {}
+    for k in config_store.ALLOWED_KEYS:
+        snap[k] = getattr(P, k, None)
+    meta = {
+        "soft_version": getattr(P, "SOFT_VERSION", "?"),
+        "freq_acq":     getattr(P, "FREQ_ACQ", None),
+        "rate_hz":      getattr(P, "TELEMETRY_RATE_HZ", None),
+        "ssid_prefix":  getattr(P, "TELEMETRY_AP_SSID_PREFIX", ""),
+    }
+    return {"values": snap, "meta": meta}
+
+
+# ---- HTTP helpers -------------------------------------------------------
+
+def _sendall(cli, data):
+    """Envoi complet sur socket non-bloquante : boucle sur EAGAIN avec
+    un petit yield. Indispensable pour l'index.html (~10 KB) qui sature
+    facilement le buffer TCP de la Pico W."""
+    view = memoryview(data)
+    n = len(view)
+    off = 0
+    # Deadline globale : on n'attendra pas plus de 3 s pour cracher la
+    # reponse complete, sinon c'est que le client est mort.
+    deadline = time.ticks_add(time.ticks_ms(), 3000)
+    while off < n:
+        try:
+            sent = cli.send(view[off:off + 1024])
+        except OSError as e:
+            err = getattr(e, "errno", None)
+            if err in (_EAGAIN, 11, 110, 116):
+                if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
+                    return False
+                time.sleep_ms(5)
+                continue
+            return False
+        if sent is None:
+            # MicroPython renvoie parfois None quand send() bloquerait.
+            time.sleep_ms(5)
+            continue
+        if sent == 0:
+            time.sleep_ms(5)
+            continue
+        off += sent
+    return True
+
+
+def _send_response(cli, code, ctype, body, extra_headers=b""):
+    status = {
+        200: b"200 OK",
+        400: b"400 Bad Request",
+        404: b"404 Not Found",
+        405: b"405 Method Not Allowed",
+        413: b"413 Payload Too Large",
+        500: b"500 Internal Server Error",
+    }.get(code, b"500 Internal Server Error")
+    if isinstance(body, str):
+        body = body.encode("utf-8")
+    headers = (
+        b"HTTP/1.1 " + status + b"\r\n"
+        b"Content-Type: " + ctype + b"\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+        b"Connection: close\r\n"
+        b"Cache-Control: no-store\r\n"
+        + extra_headers +
+        b"\r\n"
+    )
+    if not _sendall(cli, headers):
+        return
+    _sendall(cli, body)
+
+
+def _send_json(cli, code, obj):
+    _send_response(cli, code, b"application/json; charset=utf-8",
+                   json.dumps(obj))
+
+
+def _send_file(cli, code, ctype, path):
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        _send_response(cli, 404, b"text/plain; charset=utf-8", "introuvable: " + path)
+        return
+    _send_response(cli, code, ctype, data)
+
+
+# ---- Lecture du body POST -----------------------------------------------
+
+def _read_body(cli, already, content_length):
+    """Lit content_length octets de body. `already` = ce qui etait deja
+    dans le buffer apres les headers. Lecture bloquante courte (operation
+    rare au sol). Retourne (bytes, error_or_None)."""
+    if content_length > 4096:
+        return None, "body trop gros"
+    buf = already
+    if len(buf) >= content_length:
+        return buf[:content_length], None
+    try:
+        cli.setblocking(True)
+        cli.settimeout(0.5)
+    except (OSError, AttributeError):
+        pass
+    deadline = time.ticks_add(time.ticks_ms(), 1000)
+    while len(buf) < content_length:
+        if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
+            return None, "timeout lecture body"
+        try:
+            chunk = cli.recv(min(1024, content_length - len(buf)))
+        except OSError:
+            return None, "erreur reseau"
+        if not chunk:
+            return None, "connexion fermee"
+        buf += chunk
+    return buf[:content_length], None
+
+
+# ---- Routage ------------------------------------------------------------
+
+def handle(cli, raw):
+    """Traite une requete HTTP complete (headers + eventuel debut de body)
+    deja lue par telemetry.py jusqu'au CRLF CRLF. Repond et ferme la socket.
+    Toujours retourne True (socket a fermer cote appelant)."""
+    try:
+        _route(cli, raw)
+    finally:
+        try:
+            cli.close()
+        except OSError:
+            pass
+    return True
+
+
+def _route(cli, raw):
+    # Split headers / debut de body.
+    sep = raw.find(b"\r\n\r\n")
+    if sep < 0:
+        _send_response(cli, 400, b"text/plain; charset=utf-8", "requete incomplete")
+        return
+    head = raw[:sep]
+    body_start = raw[sep + 4:]
+
+    lines = head.split(b"\r\n")
+    if not lines:
+        _send_response(cli, 400, b"text/plain; charset=utf-8", "requete vide")
+        return
+    parts = lines[0].split(b" ")
+    if len(parts) < 2:
+        _send_response(cli, 400, b"text/plain; charset=utf-8", "requete malformee")
+        return
+    method, path = parts[0], parts[1]
+
+    # Parse Content-Length pour les POST.
+    content_length = 0
+    for line in lines[1:]:
+        if b":" not in line:
+            continue
+        name, _, value = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            try:
+                content_length = int(value.strip())
+            except ValueError:
+                content_length = 0
+            break
+
+    if method == b"GET" and path == b"/":
+        _send_file(cli, 200, b"text/html; charset=utf-8", "www/index.html")
+        return
+
+    if method == b"GET" and path == b"/api/config":
+        _send_json(cli, 200, _current_config())
+        return
+
+    if method == b"POST" and path == b"/api/config":
+        body, err = _read_body(cli, body_start, content_length)
+        if err is not None:
+            _send_json(cli, 400, {"ok": False, "error": err})
+            return
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError):
+            _send_json(cli, 400, {"ok": False, "error": "JSON invalide"})
+            return
+        if not isinstance(payload, dict):
+            _send_json(cli, 400, {"ok": False, "error": "objet JSON attendu"})
+            return
+        clean, verr = _validate(payload)
+        if verr is not None:
+            _send_json(cli, 400, {"ok": False, "error": verr})
+            return
+        # Merge avec l'overlay actuel : on permet une sauvegarde partielle
+        # sans ecraser les cles non envoyees.
+        merged = config_store.load()
+        merged.update(clean)
+        try:
+            config_store.save(merged)
+        except OSError as e:
+            _send_json(cli, 500, {"ok": False, "error": "ecriture FS: {}".format(e)})
+            return
+        _send_json(cli, 200, {"ok": True, "saved": clean,
+                              "note": "redemarrer l'avionique pour appliquer"})
+        return
+
+    if method == b"POST" and path == b"/api/config/reset":
+        try:
+            config_store.reset()
+        except OSError as e:
+            _send_json(cli, 500, {"ok": False, "error": str(e)})
+            return
+        _send_json(cli, 200, {"ok": True,
+                              "note": "valeurs usine au prochain boot"})
+        return
+
+    _send_response(cli, 404, b"text/plain; charset=utf-8", "not found")
