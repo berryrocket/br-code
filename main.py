@@ -257,8 +257,8 @@ if __name__ == '__main__':
                 flags = (int(is_launched) | (int(is_falling) << 1) | (int(acc_contact) << 2))
                 telem.send_telemetry(
                     int(current_time*1000), pressure, temp,
-                    ax, ay, az, gx, gy, gz,
-                    temp_imu, flags,
+                    ax, ay, az, gx, gy, gz, mx, my, mz,
+                    temp_imu, temp_mag, flags,
                 )
 
             # Mise en forme des données à écrire sur le fichier (temps, pression, température, accélération x,y,z)

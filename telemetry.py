@@ -17,13 +17,14 @@ from lib.nectar import build_frame
 
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 # Payload binaire emis dans chaque trame Nectar :
-#   <  : little-endian, packed (pas d'alignement)
-#   I  : time_ms                              (uint32, 4 B)
-#   9f : pressure, temp, ax, ay, az,
-#        gx, gy, gz, temp_imu                 (9 float32, 36 B)
-#   B  : flags                                (uint8, 1 B)
-# Total = 41 octets.
-_PAYLOAD_FMT = "<I9fB"
+#   <   : little-endian, packed (pas d'alignement)
+#   I   : time_ms                              (uint32, 4 B)
+#   13f : pressure, temp, ax, ay, az,
+#         gx, gy, gz, mx, my, mz
+#         temp_imu, temp_mag                   (13 float32, 52 B)
+#   B   : flags                                (uint8, 1 B)
+# Total = 57 octets.
+_PAYLOAD_FMT = "<I13fB"
 
 
 class TelemetryWS:
@@ -494,7 +495,7 @@ class TelemetryWS:
     # --- public emission ----------------------------------------------
 
     def send_telemetry(self, time_ms, pressure_bar, temp_c,
-                       ax, ay, az, gx, gy, gz, temp_imu_c, flags):
+                       ax, ay, az, gx, gy, gz, mx, my, mz, temp_imu_c, temp_mag_c, flags):
         if not self._ok:
             return
         self._accept_if_pending()
@@ -523,7 +524,9 @@ class TelemetryWS:
                                   pressure_bar, temp_c,
                                   ax, ay, az,
                                   gx, gy, gz,
+                                  mx, my, mz,
                                   temp_imu_c,
+                                  temp_mag_c,
                                   int(flags) & 0xFF)
             frame = build_frame(self.ssid_type, self.ssid_num, self.apid, payload)
         except (TypeError, ValueError) as e:
