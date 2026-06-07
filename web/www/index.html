@@ -187,6 +187,7 @@
     <div class="led"><span class="dot launched" id="led_launched"></span> Décollage</div>
     <div class="led"><span class="dot falling"  id="led_falling"></span> Chute libre</div>
     <div class="led"><span class="dot contact"  id="led_contact"></span> Contacteur</div>
+    <div class="led"><span class="dot contact"  id="led_low_space"></span> Stockage faible</div>
   </div>
   <div class="grid">
     <div class="tile"><div class="k">Temps</div><div class="v" id="v_t">--</div></div>
@@ -442,6 +443,7 @@ function connectWS() {
     document.getElementById("led_launched").classList.toggle("on", (f.fl & 1) !== 0);
     document.getElementById("led_falling" ).classList.toggle("on", (f.fl & 2) !== 0);
     document.getElementById("led_contact" ).classList.toggle("on", (f.fl & 4) !== 0);
+    document.getElementById("led_low_space" ).classList.toggle("on", (f.fl & 8) !== 0);
   };
 }
 connectWS();

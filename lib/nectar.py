@@ -1,6 +1,9 @@
+########################################
 # BerryRocket - NectarMC frame encoder
 # Protocol: https://github.com/mlavardin/NectarMC/blob/master/DOCUMENTATION/FRAME_FORMAT.md
 # Licence CC-BY-NC-SA
+# See https://creativecommons.org/licenses/by-nc-sa/4.0
+########################################
 
 MAGIC = 0xEB
 

@@ -61,6 +61,7 @@ TELEMETRY_SSID_NUM   = None   # 0..255 (si None, ce sera l'id unique de la carte
 SOFT_VERSION                = "2.0"
 DEBUG                       = False
 FREQ_ACQ                    = 20  # Frequence d'acquisition des données [Hz]
+MIN_FREE_SPACE_BYTES        = 512 * 1024  # Seuil mini d'espace libre pour un vol [B]
 TELEMETRY_RATE_HZ           = 5   # Fréquence d'émission radio [Hz]
 TELEMETRY_AP_SSID_PREFIX    = "BerryRocket"  # préfixe SSID
 TELEMETRY_AP_OPEN           = True           # True = réseau ouvert (pas de mot de passe)

@@ -194,7 +194,11 @@ class TelemetryWS:
             srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             srv.bind(("0.0.0.0", self.port))
-            srv.listen(1)
+            # backlog=4 : le navigateur ouvre plusieurs connexions en
+            # parallele au chargement de la page (GET /, /api/config,
+            # /api/cmd/status, upgrade WS). Sans marge, certaines se
+            # font dropper au niveau kernel -> "Failed to fetch" cote JS.
+            srv.listen(4)
             srv.setblocking(False)
             self._srv = srv
 
@@ -347,23 +351,27 @@ class TelemetryWS:
     def _accept_if_pending(self):
         if self._srv is None:
             return
+        # Si un handshake est deja en cours, on ne touche pas a accept() :
+        # on fait juste avancer le handshake. Les nouvelles connexions TCP
+        # restent en attente dans la backlog kernel et seront acceptees
+        # une fois ce handshake termine. Sinon on aurait des "Failed to
+        # fetch" cote JS quand le navigateur ouvre plusieurs connexions
+        # en parallele au chargement de la page.
+        if self._pending is not None:
+            self._drive_pending()
+            return
         try:
             cli, addr = self._srv.accept()
         except OSError:
-            # Pas de nouveau client en attente -> on tente d'avancer un
-            # handshake éventuellement en cours.
-            self._drive_pending()
             return
 
         self._log("[TELEM] incoming client:", addr)
-        # Nouvelle connexion : on annule un eventuel handshake en cours
-        # (on n'en pipeline pas deux a la fois), mais on NE ferme PAS le
-        # client WS actif : tant qu'on ne sait pas si la nouvelle requete
-        # est un upgrade WS ou une simple requete HTTP (config, /api/cmd
-        # poll, telechargement /api/data), on doit preserver la session
-        # WS de telemetrie en cours. Le drop du WS actif est repousse au
-        # moment ou un nouveau handshake WS reussit (cf. _drive_pending).
-        self._abort_pending()
+        # On NE ferme PAS le client WS actif ici : tant qu'on ne sait pas
+        # si la nouvelle requete est un upgrade WS ou une simple requete
+        # HTTP (config, /api/cmd poll, telechargement /api/data), on doit
+        # preserver la session WS de telemetrie en cours. Le drop du WS
+        # actif est repousse au moment ou un nouveau handshake WS reussit
+        # (cf. _drive_pending).
 
         # Bascule la socket en non-bloquant et démarre la machine à états.
         try:

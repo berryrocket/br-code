@@ -88,6 +88,7 @@ acc_contact         = False
 launch_time         = 0
 write_data_file     = True
 first_write_file    = True
+low_space_fs        = False
 
 ###################
 #### Fonctions ####
@@ -105,30 +106,65 @@ def InitBoard():
     acq_timer.init(freq=PARAMS.FREQ_ACQ, mode=Timer.PERIODIC, callback=Sampling)
 
 def InitPlatFile():
-    if data_folder_name not in os.listdir():
-        os.mkdir(data_folder_name)
+    try:
+        if data_folder_name not in os.listdir():
+            os.mkdir(data_folder_name)
 
-    platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
-    platform_file.write(f"########\n")
-    platform_file.write(f"## Version logiciel : v{PARAMS.SOFT_VERSION:s}\n")
-    platform_file.write(f"## Type fusée : ")
-    if (PARAMS.EJECTION_CHARGE is True):
-        platform_file.write(f"Dépotage\n")
-    else:
-        platform_file.write(f"Trappe parachute\n")
-    platform_file.write(f"## Détection décollage : ")
-    if (PARAMS.LIFTOFF_DET_IMU is True):
-        platform_file.write(f"IMU")
+        platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
+        platform_file.write(f"########\n")
+        platform_file.write(f"## Version logiciel : v{PARAMS.SOFT_VERSION:s}\n")
+        platform_file.write(f"## Type fusée : ")
+        if (PARAMS.EJECTION_CHARGE is True):
+            platform_file.write(f"Dépotage\n")
+        else:
+            platform_file.write(f"Trappe parachute\n")
+        platform_file.write(f"## Détection décollage : ")
+        if (PARAMS.LIFTOFF_DET_IMU is True):
+            platform_file.write(f"IMU")
+            if (PARAMS.LIFTOFF_DET_CONTACT is True):
+                platform_file.write(f" + ")
         if (PARAMS.LIFTOFF_DET_CONTACT is True):
-            platform_file.write(f" + ")
-    if (PARAMS.LIFTOFF_DET_CONTACT is True):
-        platform_file.write(f"Accélero contact")
-    platform_file.write(f"\n")
-    platform_file.write(f"## Fenetrage temporel : {PARAMS.TIMEOUT_APOGEE:d} ms\n")
-    platform_file.write(f"## Frequence acquisition données: {PARAMS.FREQ_ACQ:d} Hz\n")
-    platform_file.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] "),
-    platform_file.write(f"| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [Gauss] | mag Y [Gauss] | mag Z [Gauss]\n")
-    platform_file.close()
+            platform_file.write(f"Accélero contact")
+        platform_file.write(f"\n")
+        platform_file.write(f"## Fenetrage temporel : {PARAMS.TIMEOUT_APOGEE:d} ms\n")
+        platform_file.write(f"## Frequence acquisition données: {PARAMS.FREQ_ACQ:d} Hz\n")
+        platform_file.write(f"# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] "),
+        platform_file.write(f"| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [Gauss] | mag Y [Gauss] | mag Z [Gauss]\n")
+        platform_file.close()
+    except OSError as e:
+        print(f"[ERREUR] Initialisation data_platform.txt impossible: {e}")
+        print(GetFreeSpaceBytes())
+
+def GetFreeSpaceBytes():
+    """Retourne l'espace libre du FS en octets. Renvoie -1 si indisponible.
+    LittleFS peut renvoyer un f_bavail negatif en overcommit (FS sature) :
+    on clamp a 0 pour que les comparaisons numeriques restent correctes."""
+    try:
+        s = os.statvfs('/')
+        free = s[0] * s[3]  # f_bsize * f_bavail
+        return free if free > 0 else 0
+    except Exception:
+        return -1
+
+def PrintFSInfo():
+    """Affiche l'etat du FS (LittleFS ne expose pas la fragmentation).
+    Sert de diagnostic avant les ecritures pour reperer un FS plein/abime."""
+    try:
+        s = os.statvfs('/')
+        bsize, frsize, blocks, bfree, bavail = s[0], s[1], s[2], s[3], s[4]
+        total = blocks * bsize
+        free = bavail * bsize
+        used = total - free
+        pct = (used * 100) // total if total else 0
+        print(f"[FS] bloc={bsize}B total={total}B used={used}B ({pct}%) free={free}B "
+              f"blocs total={blocks} libres={bfree}")
+        try:
+            sz = os.stat(data_folder+"data_platform.txt")[6]
+            print(f"[FS] data_platform.txt = {sz} B")
+        except OSError:
+            print("[FS] data_platform.txt absent")
+    except Exception as e:
+        print(f"[FS] statvfs indisponible: {e}")
 
 # Activation de l'acquisition des données
 def Sampling(timer):
@@ -151,6 +187,10 @@ def IrqAcc(p):
 
 # Main fonction
 if __name__ == '__main__':
+
+    if PARAMS.DEBUG:
+        # Diagnostic FS
+        PrintFSInfo()
 
     # Début initialisation avec son specific
     SetBuzzer(PARAMS.BUZZER_ENABLE, freq=800, tps=0.2)
@@ -210,6 +250,17 @@ if __name__ == '__main__':
     # Ouvre un fichier pour l'écriture des données
     InitPlatFile()
     data_platform_buffer = []
+
+    # Vérification de l'espace libre pour un vol
+    free_bytes = GetFreeSpaceBytes()
+    if 0 <= free_bytes < PARAMS.MIN_FREE_SPACE_BYTES:
+        low_space_fs = True
+        print(f"[ERREUR] Espace libre insuffisant pour un vol : "
+              f"{free_bytes} B < {PARAMS.MIN_FREE_SPACE_BYTES} B "
+              f"(>= ~500 kB requis). Purger data/ avant le décollage !")
+        # Son d'alerte dédié : grave et rapide, distinct des autres tonalités
+        SetBuzzer(PARAMS.BUZZER_ENABLE, freq=200, tps=0.25)
+        time.sleep(3)
 
     # Exécute les actions de la charge utile au démarrage de la carte
     CU_Initialisation(baro, imu)
@@ -277,16 +328,20 @@ if __name__ == '__main__':
                     # Changement du son du buzzer
                     SetBuzzer(PARAMS.BUZZER_ENABLE, freq=2000, tps=0.5)
                     # Ecriture du temps actuel du debut de la chute libre dans le fichier
-                    platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
-                    platform_file.write(f"# Free-fall: {current_time:.3f}s\n")
-                    platform_file.close()
+                    try:
+                        platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
+                        platform_file.write(f"# Free-fall: {current_time:.3f}s\n")
+                        platform_file.close()
+                    except OSError as e:
+                        if PARAMS.DEBUG is True:
+                            print(f"[ERREUR] Ecriture data_platform.txt impossible: {e}")
                     if PARAMS.DEBUG is True:
                         # Affichage sur la console
                         print('Free-fall !')
 
             # Emission de la trame de télémétrie Nectar (silencieuse si désactivée ou aucun client)
             if telem is not None:
-                flags = (int(is_launched) | (int(is_falling) << 1) | (int(acc_contact) << 2))
+                flags = (int(is_launched) | (int(is_falling) << 1) | (int(acc_contact) << 2) | (int(low_space_fs) << 3))
                 telem.send_telemetry(
                     int(current_time*1000), pressure, temp,
                     ax, ay, az, gx, gy, gz, mx, my, mz,
@@ -316,15 +371,21 @@ if __name__ == '__main__':
                         write_data_file = True
                 elif write_data_file is True:
                     # Ecriture sur le fichier de plusieurs points de mesure
-                    platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
-                    for dataEl in data_platform_buffer:
-                        platform_file.write(dataEl)
-                    data_platform_buffer = []
-                    if first_write_file is True:
-                        platform_file.write(f"# Lift-off: {current_time:.3f}s\n")
-                        first_write_file = False
-                    platform_file.write(dataFilePlat)
-                    platform_file.close()
+                    try:
+                        platform_file = open(data_folder+"data_platform.txt","a", encoding="utf-8")
+                        for dataEl in data_platform_buffer:
+                            platform_file.write(dataEl)
+                        data_platform_buffer = []
+                        if first_write_file is True:
+                            platform_file.write(f"# Lift-off: {current_time:.3f}s\n")
+                            first_write_file = False
+                        platform_file.write(dataFilePlat)
+                        platform_file.close()
+                    except OSError as e:
+                        if PARAMS.DEBUG is True:
+                            print(f"[ERREUR] Ecriture data_platform.txt impossible: {e}")
+                        # Vide le buffer pour éviter qu'il grossisse à l'infini en RAM
+                        data_platform_buffer = []
                     write_data_file = False
 
                 # Exécute les actions de la charge utile après décollage
@@ -351,12 +412,12 @@ if __name__ == '__main__':
                 print(f'Acc contact:   {acc_contact:.1d}')
                 time.sleep(0.250)
             
-            ###############
-            # System code
-            # Do not touch
-            ###############
+        ###############
+        # System code
+        # Do not touch
+        ###############
 
-            # Traite les requetes DNS captives (auto-popup de la page web
-            # a la connexion wifi). Non bloquant.
-            if cdns is not None:
-                cdns.poll()
+        # Traite les requetes DNS captives (auto-popup de la page web
+        # a la connexion wifi). Non bloquant.
+        if cdns is not None:
+            cdns.poll()
