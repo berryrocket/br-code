@@ -16,8 +16,8 @@ from lib.xis2mdx import xIS2MDx
 from cu import *
 from buzzer import *
 from telemetry import TelemetryWS
-from captive_dns import CaptiveDNS
-import ground_cmd
+from web.captive_dns import CaptiveDNS
+from web import ground_cmd
 import parameters as PARAMS
 
 #####################

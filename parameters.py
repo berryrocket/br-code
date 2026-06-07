@@ -78,5 +78,5 @@ TELEMETRY_APID              = 0   # 0..63
 # constantes correspondantes (ecrit par la page web embarquee). Pour
 # revenir aux valeurs usine : bouton "Reinitialiser" de la page, ou
 # supprimer config.json depuis Thonny.
-from config_store import load as _load_overlay
+from web.config_store import load as _load_overlay
 globals().update(_load_overlay())

@@ -233,7 +233,7 @@ class TelemetryWS:
             #  - sonde captive-portal de l'OS -> 204 pour faire taire l'OS.
             if buf.startswith(b"GET ") or buf.startswith(b"POST "):
                 try:
-                    import web
+                    from web import router as web
                     web.handle(cli, buf)
                 except Exception as e:
                     self._log("[TELEM] web handler error:", e)

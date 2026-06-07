@@ -20,8 +20,8 @@ try:
 except (ImportError, AttributeError):
     _EAGAIN = 11
 
-import config_store
-import ground_cmd
+from web import config_store
+from web import ground_cmd
 
 
 # ---- Validation par champ -----------------------------------------------
@@ -289,7 +289,7 @@ def _route(cli, raw):
             break
 
     if method == b"GET" and path == b"/":
-        _send_file(cli, 200, b"text/html; charset=utf-8", "www/index.html")
+        _send_file(cli, 200, b"text/html; charset=utf-8", "web/www/index.html")
         return
 
     if method == b"GET" and path == b"/api/config":
