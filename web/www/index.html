@@ -243,8 +243,10 @@
     <h3>Données de vol</h3>
     <div class="cmd-grid">
       <button class="secondary" id="btnDownload">Télécharger data_platform.txt</button>
+      <button id="btnDeleteData" disabled>Effacer le fichier de données</button>
     </div>
-    <p class="hint">Le fichier contient toutes les acquisitions de chaque vol.</p>
+    <p class="hint">Le fichier contient toutes les acquisitions de chaque vol.
+       L'effacement est protégé par le mode sol (déverrouillage requis).</p>
   </div>
 
   <div id="cmdFeedback"></div>
@@ -451,6 +453,7 @@ const btnArm       = document.getElementById("btnArm");
 const btnOpen      = document.getElementById("btnOpen");
 const btnClose     = document.getElementById("btnClose");
 const btnDownload  = document.getElementById("btnDownload");
+const btnDeleteData = document.getElementById("btnDeleteData");
 const dangerBanner = document.getElementById("dangerBanner");
 const cmdFeedback  = document.getElementById("cmdFeedback");
 let cmdState = {armed:false, in_flight:false, can_arm:true, has_servo:true};
@@ -491,8 +494,9 @@ function refreshCmdUI() {
     btnArm.disabled = !cmdState.can_arm;
     btnArm.textContent = cmdState.has_servo ? "Déverrouiller" : "Aucun servo";
   }
-  btnOpen.disabled  = !armed || inFlight;
-  btnClose.disabled = !armed || inFlight;
+  btnOpen.disabled       = !armed || inFlight;
+  btnClose.disabled      = !armed || inFlight;
+  btnDeleteData.disabled = !armed || inFlight;
 }
 
 async function pollCmdStatus() {
@@ -554,6 +558,13 @@ btnDownload.addEventListener("click", () => {
   document.body.appendChild(a);
   a.click();
   a.remove();
+});
+btnDeleteData.addEventListener("click", async () => {
+  if (!confirm("Effacer définitivement data_platform.txt ?\n\n" +
+               "Toutes les données enregistrées (y compris celles de vols " +
+               "précédents) seront perdues. Un nouvel en-tête sera écrit.")) return;
+  const res = await postCmd("/api/data/delete");
+  if (res.ok) showCmdFeedback("Fichier de données effacé et ré-initialisé.", true);
 });
 
 pollCmdStatus();

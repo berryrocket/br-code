@@ -174,10 +174,12 @@ if __name__ == '__main__':
     if porte_para != 0:
         ground_cmd.init(OpenParachute, CloseParachute,
                         PARAMS.BUZZER_ENABLE,
-                        data_path=data_folder+"data_platform.txt")
+                        data_path=data_folder+"data_platform.txt",
+                        init_data_fn=InitPlatFile)
     else:
         ground_cmd.init(None, None, PARAMS.BUZZER_ENABLE,
-                        data_path=data_folder+"data_platform.txt")
+                        data_path=data_folder+"data_platform.txt",
+                        init_data_fn=InitPlatFile)
 
     # Initialisation des fonctions d'acquisitions
     InitBoard()

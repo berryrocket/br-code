@@ -388,6 +388,14 @@ def _route(cli, raw):
         _send_file_download(cli, ground_cmd.data_path(), "data_platform.txt")
         return
 
+    if method == b"POST" and path == b"/api/data/delete":
+        ok = ground_cmd.delete_data()
+        _send_json(cli, 200 if ok else 409, {
+            "ok": ok,
+            "error": None if ok else "suppression refusée (non armé, en vol, ou erreur FS)",
+        })
+        return
+
     # ---- Captive portal -------------------------------------------------
     # Toute requete inconnue (typiquement une sonde OS qui a ete redirigee
     # vers nous par le hijack DNS) est redirigee vers /. C'est ce qui fait
