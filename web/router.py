@@ -257,6 +257,19 @@ def handle(cli, raw):
 
 
 def _route(cli, raw):
+    # Routes servies :
+    #   GET  /                      -> page web (www/index.html)
+    #   GET  /api/config            -> snapshot config courante (JSON)
+    #   POST /api/config            -> ecrit l'overlay config.json
+    #   POST /api/config/reset      -> efface l'overlay (valeurs usine)
+    #   GET  /api/cmd/status        -> etat armement/vol
+    #   POST /api/cmd/arm           -> arme l'avionique (sol uniquement)
+    #   POST /api/cmd/disarm        -> desarme
+    #   POST /api/cmd/trap          -> ouvre/ferme la trappe (si arme)
+    #   GET  /api/data              -> telecharge data_platform.txt
+    #   POST /api/data/delete       -> supprime et reinitialise le fichier data
+    #   *                           -> redirige vers / (captive portal)
+
     # Split headers / debut de body.
     sep = raw.find(b"\r\n\r\n")
     if sep < 0:

@@ -117,6 +117,10 @@ class TelemetryWS:
     # --- lifecycle -----------------------------------------------------
 
     def start(self):
+        """Démarre le point d'accès WiFi et le serveur WebSocket.
+        À appeler une seule fois au boot, après __init__. Renvoie True si
+        le WiFi/AP s'est bien levé (False sur Pico non-W ou erreur réseau).
+        Aucune trame n'est émise tant que start() n'a pas réussi."""
         try:
             try:
                 import os
@@ -532,6 +536,10 @@ class TelemetryWS:
 
     def send_telemetry(self, time_ms, pressure_bar, temp_c,
                        ax, ay, az, gx, gy, gz, mx, my, mz, temp_imu_c, temp_mag_c, flags):
+        """Émet une trame Nectar (binaire, 57 octets) au client WebSocket.
+        À appeler à chaque sample dans la boucle d'acquisition. Silencieux
+        si aucun client n'est connecté ou si le rate-limiting saute la frame.
+        Ne bloque jamais : draine aussi le handshake WS en cours par tranches."""
         if not self._ok:
             return
         self._accept_if_pending()
@@ -586,6 +594,8 @@ class TelemetryWS:
             self._drop_client()
 
     def stop(self):
+        """Arrête proprement le serveur WebSocket et désactive l'AP WiFi.
+        À appeler au shutdown ou avant un reset. Idempotent."""
         self._abort_pending()
         self._drop_client()
         if self._srv is not None:
