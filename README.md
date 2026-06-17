@@ -168,8 +168,12 @@ flowchart TD
     A -- yes --> A2["open_parachute()<br/>falling = True<br/>write Free-fall marker"]
     A -- no --> TX
     A2 --> TX["send WebSocket telemetry frame"]
-    TX --> W["buffer the data line<br/>flush to flash every ~0.5 s"]
-    W --> P["run payload hook<br/>(before / after / descent)"]
+    TX --> B["append data line to RAM buffer"]
+    B --> G{launched?}
+    G -->|"no (on ground)"| G1["keep only the last ~0.5 s<br/>in RAM — no flash write"]
+    G -->|"yes (in flight)"| G2["flush the buffer to flash<br/>every ~0.5 s"]
+    G1 --> P["run payload hook<br/>(before / after / descent)"]
+    G2 --> P
     P --> DNS["poll captive DNS"]
 ```
 
@@ -211,7 +215,7 @@ sequenceDiagram
     loop ~5 Hz (TELEMETRY_RATE_HZ)
         AP-->>U: Nectar telemetry frame (binary)
     end
-    Note over U,AP: After liftoff, HTTP is refused;<br/>only WebSocket frames keep flowing.
+    Note over U,AP: After liftoff, HTTP is refused. Only WebSocket frames keep flowing.
 ```
 
 ### Ground vs flight: how a connection is handled
@@ -269,13 +273,17 @@ The payload is packed little-endian as `<I 13f B` (57 bytes total):
 ## Data logging
 
 Flight data is written to **`data/data_platform.txt`**. The file is **opened once
-at boot and kept open**; each batch (~0.5 s) is written and `flush()`-ed to flash.
+at boot and kept open**.
 
+- **Before liftoff**, samples are kept in a **rolling ~0.5 s RAM buffer** — nothing
+  is written to flash yet. This preserves a short pre-launch context without wearing
+  the flash on the pad.
+- **At liftoff**, the pre-launch buffer is flushed, a `# Lift-off: <t>s` marker is
+  inserted, and from then on each batch (~0.5 s) is written and `flush()`-ed to flash.
 - LittleFS is **power-loss resilient**: a sudden power cut loses at most the last
   un-flushed batch (~0.5 s), **never the whole file**.
 - The header block records software version, rocket type, detection mode and
-  acquisition rate. Markers `# Lift-off: <t>s` and `# Free-fall: <t>s` are inserted
-  in the data stream.
+  acquisition rate. A `# Free-fall: <t>s` marker is added at apogee.
 
 Line format (space-separated):
 
