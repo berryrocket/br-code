@@ -100,6 +100,10 @@ launched        = False  # True après détection du décollage
 falling         = False  # True après le délai d'apogée (chute libre)
 launch_time_ms  = 0      # ticks_ms() au moment du décollage
 low_space_fs    = False  # True si l'espace libre est insuffisant avant le vol
+missed_samples  = 0      # nb de ticks d'acquisition non traités à temps (overrun)
+
+# Fichier de données ouvert une seule fois au boot et gardé ouvert tout le vol.
+_flight_file    = None
 
 
 #############################
@@ -123,7 +127,12 @@ def on_contact_rise(pin):
 
 def on_acq_tick(timer):
     """Callback du timer d'acquisition à FREQ_ACQ Hz."""
-    global is_sampling
+    global is_sampling, missed_samples
+    if is_sampling:
+        # Le tick précédent n'a pas encore été traité : la boucle est en retard
+        # (souvent une écriture flash qui a dépassé le budget de 50 ms). On compte
+        # le sample raté pour pouvoir le diagnostiquer.
+        missed_samples += 1
     is_sampling = True
 
 
@@ -133,7 +142,7 @@ def get_free_space_bytes():
     on clamp à 0 pour que les comparaisons numériques restent correctes."""
     try:
         s = os.statvfs('/')
-        free = s[0] * s[3]  # f_bsize * f_bavail
+        free = s[0] * s[4]  # f_bsize * f_bavail (même champ que print_fs_info)
         return free if free > 0 else 0
     except Exception:
         return -1
@@ -159,31 +168,82 @@ def print_fs_info():
         print(f"[FS] statvfs indisponible: {e}")
 
 
+def _build_header_lines():
+    """Construit les lignes d'en-tête de mission du fichier de données."""
+    modes = []
+    if PARAMS.LIFTOFF_DET_IMU:     modes.append("IMU")
+    if PARAMS.LIFTOFF_DET_CONTACT: modes.append("Accélero contact")
+    return [
+        "########\n",
+        f"## Version logiciel : v{PARAMS.SOFT_VERSION:s}\n",
+        "## Type fusée : " + ("Dépotage\n" if PARAMS.EJECTION_CHARGE else "Trappe parachute\n"),
+        "## Détection décollage : " + " + ".join(modes) + "\n",
+        f"## Fenetrage temporel : {PARAMS.TIMEOUT_APOGEE:d} ms\n",
+        f"## Frequence acquisition données: {PARAMS.FREQ_ACQ:d} Hz\n",
+        "# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] "
+        "| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [Gauss] | mag Y [Gauss] | mag Z [Gauss]\n",
+    ]
+
+
+def _write_header():
+    """Écrit l'en-tête de mission dans le fichier ouvert (+ flush)."""
+    for line in _build_header_lines():
+        _flight_file.write(line)
+    _flight_file.flush()
+
+
 def init_data_file():
-    """Crée data/data_platform.txt et écrit son en-tête de mission."""
+    """Boot : crée le dossier, ouvre data_platform.txt en append et écrit
+    l'en-tête. Le handle est GARDÉ OUVERT pour tout le vol (pas de close)."""
+    global _flight_file
     try:
         if DATA_FOLDER not in os.listdir():
             os.mkdir(DATA_FOLDER)
-
-        with open(DATA_FILE, "a", encoding="utf-8") as f:
-            f.write("########\n")
-            f.write(f"## Version logiciel : v{PARAMS.SOFT_VERSION:s}\n")
-            f.write("## Type fusée : ")
-            f.write("Dépotage\n" if PARAMS.EJECTION_CHARGE else "Trappe parachute\n")
-
-            f.write("## Détection décollage : ")
-            modes = []
-            if PARAMS.LIFTOFF_DET_IMU:     modes.append("IMU")
-            if PARAMS.LIFTOFF_DET_CONTACT: modes.append("Accélero contact")
-            f.write(" + ".join(modes) + "\n")
-
-            f.write(f"## Fenetrage temporel : {PARAMS.TIMEOUT_APOGEE:d} ms\n")
-            f.write(f"## Frequence acquisition données: {PARAMS.FREQ_ACQ:d} Hz\n")
-            f.write("# Temps [s] | Pression [mBar] | temperature [°C] | acc X [g] | acc Y [g] | acc Z [g] "
-                    "| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [Gauss] | mag Y [Gauss] | mag Z [Gauss]\n")
+        _flight_file = open(DATA_FILE, "a", encoding="utf-8")
+        _write_header()
     except OSError as e:
         print(f"[ERREUR] Initialisation data_platform.txt impossible: {e}")
         print(get_free_space_bytes())
+
+
+def reset_data_file():
+    """Commande sol 'supprimer données' : ferme le handle, tronque le fichier
+    (mode 'w'), réécrit l'en-tête et garde ouvert. Remplace le os.remove de
+    ground_cmd pour que main reste seul propriétaire du handle."""
+    global _flight_file
+    try:
+        if _flight_file is not None:
+            _flight_file.close()
+    except OSError:
+        pass
+    _flight_file = None   # état propre si l'ouverture ci-dessous échoue
+    _flight_file = open(DATA_FILE, "w", encoding="utf-8")
+    _write_header()
+
+
+def write_flight_lines(lines):
+    """Écrit des lignes dans le fichier de vol (handle déjà ouvert) puis flush().
+    flush() commit le lot en flash : durabilité identique à l'ancien close()
+    (au pire le dernier lot ~0,5 s est perdu sur une coupure d'alim). Renvoie
+    True si OK, False sinon."""
+    global _flight_file
+    try:
+        if _flight_file is None:          # garde-fou : repart après une erreur
+            _flight_file = open(DATA_FILE, "a", encoding="utf-8")
+        for line in lines:
+            _flight_file.write(line)
+        _flight_file.flush()
+        return True
+    except OSError as e:
+        if PARAMS.DEBUG:
+            print(f"[ERREUR] Ecriture data_platform.txt impossible: {e}")
+        try:
+            if _flight_file is not None:
+                _flight_file.close()
+        except OSError:
+            pass
+        _flight_file = None
+        return False
 
 
 #############################
@@ -196,37 +256,47 @@ def _safe(value):
 
 def read_all_sensors():
     """Lit baro + IMU (+ mag) et renvoie un tuple de 13 valeurs :
-    (pressure, temp, ax, ay, az, gx, gy, gz, mx, my, mz, temp_imu, temp_mag)."""
+    (pressure, temp, ax, ay, az, gx, gy, gz, mx, my, mz, temp_imu, temp_mag).
+
+    SÉCURITÉ : si un capteur ne répond pas (None) ou lève une erreur I2C
+    (glitch, brown-out, bus qui bave), on renvoie des zéros pour cette lecture
+    au lieu de planter la boucle de vol. Ainsi la détection d'apogée par
+    timeout continue de tourner et le parachute s'ouvre quand même."""
     if PARAMS.SENSOR_BOARD is None:
         return (0.0,) * 13
 
-    pressure = _safe(baro.read_pressure())
-    temp     = _safe(baro.read_temperature())
-    mx = my = mz = 0.0
-    temp_imu = temp_mag = 0.0
+    try:
+        pressure = _safe(baro.read_pressure())
+        temp     = _safe(baro.read_temperature())
+        mx = my = mz = 0.0
+        temp_imu = temp_mag = 0.0
 
-    if PARAMS.SENSOR_BOARD == "10DOF_V1":
-        ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
-        temp_imu = _safe(imu.read_temperature())
-    elif PARAMS.SENSOR_BOARD == "10DOF_V2.1":
-        ax, ay, az = imu.acceleration
-        gx, gy, gz = imu.gyro
-        temp_imu   = _safe(imu.temperature)
-    else:  # BR_MINI_SENSOR
-        ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
-        temp_imu = _safe(imu.read_temperature())
-        if mag is not None:
-            mx_raw, my_raw, mz_raw = mag.read_mag()
-            mx = _safe(mx_raw)
-            my = -_safe(my_raw)   # alignement axe Y du magnéto avec l'IMU
-            mz = _safe(mz_raw)
-            temp_mag = _safe(mag.read_temperature())
+        if PARAMS.SENSOR_BOARD == "10DOF_V1":
+            ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
+            temp_imu = _safe(imu.read_temperature())
+        elif PARAMS.SENSOR_BOARD == "10DOF_V2.1":
+            ax, ay, az = imu.acceleration
+            gx, gy, gz = imu.gyro
+            temp_imu   = _safe(imu.temperature)
+        else:  # BR_MINI_SENSOR
+            ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
+            temp_imu = _safe(imu.read_temperature())
+            if mag is not None:
+                mx_raw, my_raw, mz_raw = mag.read_mag()
+                mx = _safe(mx_raw)
+                my = -_safe(my_raw)   # alignement axe Y du magnéto avec l'IMU
+                mz = _safe(mz_raw)
+                temp_mag = _safe(mag.read_temperature())
 
-    return (pressure, temp,
-            _safe(ax), _safe(ay), _safe(az),
-            _safe(gx), _safe(gy), _safe(gz),
-            mx, my, mz,
-            temp_imu, temp_mag)
+        return (pressure, temp,
+                _safe(ax), _safe(ay), _safe(az),
+                _safe(gx), _safe(gy), _safe(gz),
+                mx, my, mz,
+                temp_imu, temp_mag)
+    except Exception as e:
+        if PARAMS.DEBUG:
+            print(f"[ERREUR] Lecture capteurs impossible: {e}")
+        return (0.0,) * 13
 
 
 def detect_liftoff(ay):
@@ -252,31 +322,30 @@ def format_data_line(time_s, reading):
             f"{mx:.2f} {my:.2f} {mz:.2f}\n")
 
 
-def append_lines(path, lines):
-    """Ajoute des lignes au fichier. Renvoie True si OK, False sinon."""
-    try:
-        with open(path, "a", encoding="utf-8") as f:
-            for line in lines:
-                f.write(line)
-        return True
-    except OSError as e:
-        if PARAMS.DEBUG:
-            print(f"[ERREUR] Ecriture data_platform.txt impossible: {e}")
-        return False
-
-
 def send_telemetry_frame(telem, time_s, reading):
     """Émet une trame Nectar via le WebSocket (silencieux si désactivé)."""
     if telem is None:
         return
     pressure, temp, ax, ay, az, gx, gy, gz, mx, my, mz, ti, tm = reading
     flags = (   int(launched)
-             | (int(falling)       << 1)
-             | (int(contact_fired) << 2)
-             | (int(low_space_fs)  << 3))
+             | (int(falling)            << 1)
+             | (int(contact_fired)      << 2)
+             | (int(low_space_fs)       << 3)
+             | (int(missed_samples > 0) << 4))  # overrun (sample(s) raté(s))
     telem.send_telemetry(int(time_s * 1000), pressure, temp,
                          ax, ay, az, gx, gy, gz, mx, my, mz,
                          ti, tm, flags)
+
+
+def run_payload(func, *args):
+    """Exécute un hook charge utile (code élève) sans jamais casser le vol.
+    Si le code de cu.py lève une erreur, on l'ignore (log en DEBUG) pour que
+    la détection d'apogée et l'ouverture parachute continuent de tourner."""
+    try:
+        func(*args)
+    except Exception as e:
+        if PARAMS.DEBUG:
+            print(f"[ERREUR] charge utile: {e}")
 
 
 def print_debug(time_s, reading):
@@ -291,6 +360,7 @@ def print_debug(time_s, reading):
         print(f'Pressure:      P = {pressure:.2f} hPa')
         print(f'Temperature:   T = {temp:.2f} dC / IMU = {ti:.2f} dC / MAG = {tm:.2f} dC')
     print(f'Acc contact:   {contact_fired:.1d}')
+    print(f'Samples ratés: {missed_samples:d}')
 
 
 #############################
@@ -341,6 +411,8 @@ def run_flight_loop(telem, cdns):
     flush_every          = max(1, PARAMS.FREQ_ACQ // 2)    # flush toutes les ~0.5 s
     samples_since_flush  = 0
     first_flight_write   = True
+    prelaunch_count      = 0      # nb de lignes pré-décollage (place du marqueur)
+    launch_time_s        = 0.0    # instant du décollage [s] (pour le marqueur)
     debug_print_every    = max(1, PARAMS.FREQ_ACQ // 4)    # 4 prints/s en DEBUG
     debug_tick           = 0
 
@@ -357,6 +429,11 @@ def run_flight_loop(telem, cdns):
             if detect_liftoff(ay):
                 launched       = True
                 launch_time_ms = time.ticks_ms()
+                launch_time_s  = time_s
+                # pending_lines ne contient encore que le buffer pré-décollage
+                # (la mesure courante n'est ajoutée qu'après) : on retient sa
+                # taille pour insérer le marqueur juste après, au bon endroit.
+                prelaunch_count = len(pending_lines)
                 ground_cmd.lock_after_liftoff()
                 set_buzzer(PARAMS.BUZZER_ENABLE, freq=1500, tps=1)
                 if PARAMS.DEBUG:
@@ -367,7 +444,7 @@ def run_flight_loop(telem, cdns):
                 open_parachute()
                 falling = True
                 set_buzzer(PARAMS.BUZZER_ENABLE, freq=2000, tps=0.5)
-                append_lines(DATA_FILE, [f"# Free-fall: {time_s:.3f}s\n"])
+                write_flight_lines([f"# Free-fall: {time_s:.3f}s\n"])
                 if PARAMS.DEBUG:
                     print('Free-fall !')
 
@@ -381,20 +458,23 @@ def run_flight_loop(telem, cdns):
                 # Avant décollage : on garde seulement les 0.5 s pré-décollage.
                 if len(pending_lines) > flush_every:
                     del pending_lines[0]
-                payload_before_liftoff(time_s, baro, imu)
+                run_payload(payload_before_liftoff, time_s, baro, imu)
             else:
                 samples_since_flush += 1
                 if samples_since_flush >= flush_every:
                     if first_flight_write:
-                        pending_lines.insert(0, f"# Lift-off: {time_s:.3f}s\n")
+                        # Marqueur APRÈS le buffer pré-décollage, AVANT les
+                        # données de vol (à l'index où finit le pré-décollage).
+                        pending_lines.insert(
+                            prelaunch_count, f"# Lift-off: {launch_time_s:.3f}s\n")
                         first_flight_write = False
-                    append_lines(DATA_FILE, pending_lines)
+                    write_flight_lines(pending_lines)
                     pending_lines       = []
                     samples_since_flush = 0
-                payload_after_liftoff(time_s, baro, imu)
+                run_payload(payload_after_liftoff, time_s, baro, imu)
 
             if falling:
-                payload_during_descent(time_s, baro, imu)
+                run_payload(payload_during_descent, time_s, baro, imu)
 
             # --- Debug console (non bloquant : 4 prints/s) ---
             if PARAMS.DEBUG:
@@ -432,11 +512,11 @@ if __name__ == '__main__':
         ground_cmd.setup(open_parachute, close_parachute,
                          PARAMS.BUZZER_ENABLE,
                          data_path=DATA_FILE,
-                         init_data_fn=init_data_file)
+                         reset_data_fn=reset_data_file)
     else:
         ground_cmd.setup(None, None, PARAMS.BUZZER_ENABLE,
                          data_path=DATA_FILE,
-                         init_data_fn=init_data_file)
+                         reset_data_fn=reset_data_file)
 
     init_board()
     telem, cdns = start_telemetry()
@@ -454,7 +534,7 @@ if __name__ == '__main__':
         time.sleep(3)
 
     # Exécute les actions de la charge utile au démarrage de la carte
-    payload_on_boot(baro, imu)
+    run_payload(payload_on_boot, baro, imu)
 
     # Fin initialisation avec son specific
     set_buzzer(PARAMS.BUZZER_ENABLE, freq=800, tps=0.2)
