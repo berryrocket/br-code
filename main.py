@@ -435,6 +435,9 @@ def run_flight_loop(telem, cdns):
                 # taille pour insérer le marqueur juste après, au bon endroit.
                 prelaunch_count = len(pending_lines)
                 ground_cmd.lock_after_liftoff()
+                # Coupe tout service HTTP : en vol, télémétrie WS uniquement.
+                if telem is not None:
+                    telem.mark_launched()
                 set_buzzer(PARAMS.BUZZER_ENABLE, freq=1500, tps=1)
                 if PARAMS.DEBUG:
                     print('Decollage !')

@@ -59,6 +59,10 @@ class TelemetryWS:
         self._srv = None
         self._client = None
         self._wlan = None
+        # En vol (apres mark_launched) : on ne sert plus aucun HTTP (page/API).
+        # Seules la telemetrie WS et les (re)connexions WS continuent. Garantit
+        # que la boucle de vol n'est jamais bloquee par du service HTTP.
+        self._in_flight = False
         self.ssid_ap = None  # SSID final calcule dans start()
         self.debug = debug
         # Handshake non bloquant : on lit les headers HTTP en plusieurs passes
@@ -223,6 +227,14 @@ class TelemetryWS:
             self._ok = False
             return False
 
+    def mark_launched(self):
+        """Appelé par main.py au décollage. Coupe tout service HTTP (page web,
+        API, portail captif) : en vol on ne sert plus que la télémétrie WS au
+        client déjà connecté. Les (re)connexions WS restent acceptées (leur
+        handshake est non bloquant). Garantit que la boucle de vol n'est jamais
+        bloquée par une lecture de corps HTTP ou un envoi de page."""
+        self._in_flight = True
+
     # --- internals -----------------------------------------------------
 
     def _finalize_handshake(self, cli, buf):
@@ -235,7 +247,17 @@ class TelemetryWS:
                     key = value.strip()
                     break
         if key is None:
-            # Pas un upgrade WebSocket. Deux cas :
+            # Pas un upgrade WebSocket -> requête HTTP (page/API) ou sonde captive.
+            #
+            # PROTECTION VOL : en vol on ne sert AUCUN HTTP. On ferme la socket
+            # immédiatement (return False -> _drive_pending ferme) sans lire de
+            # corps ni envoyer de réponse : c'est le seul vecteur de blocage HTTP
+            # (lecture de corps POST, envoi de la page ~10 Ko). La page est déjà
+            # chargée au sol ; seule la télémétrie WS continue en vol.
+            if self._in_flight:
+                self._log("[TELEM] HTTP ignoré en vol")
+                return False
+            # Au sol : service HTTP normal (le blocage éventuel y est inoffensif).
             #  - vraie requête HTTP (GET/POST) -> page de config / API JSON
             #    servie par web.py sur la même socket (même port que le WS).
             #  - sonde captive-portal de l'OS -> 204 pour faire taire l'OS.
@@ -283,20 +305,58 @@ class TelemetryWS:
             return False
         return True
 
+    @staticmethod
+    def _content_length(head):
+        # Parse l'en-tete Content-Length (insensible a la casse) dans le bloc
+        # d'en-tetes `head`. Retourne 0 si absent/invalide.
+        for line in head.split(b"\r\n"):
+            name, _, value = line.partition(b":")
+            if name.strip().lower() == b"content-length":
+                try:
+                    return int(value.strip())
+                except ValueError:
+                    return 0
+        return 0
+
+    def _request_complete(self, buf):
+        # True quand la requete HTTP est entierement bufferisee : en-tetes
+        # (\r\n\r\n) PUIS, pour un POST, les content_length octets de corps.
+        # On lit ainsi tout le corps dans la machine a etats non bloquante,
+        # avant de dispatcher au routeur (qui n'a alors plus rien a lire ->
+        # ne bloque jamais la boucle d'acquisition).
+        if len(buf) >= 8192:
+            return True   # garde-fou taille : on arrete de lire, le routeur tranchera
+        sep = buf.find(b"\r\n\r\n")
+        if sep < 0:
+            return len(buf) >= 2048   # en-tetes pas finis (cap historique)
+        if self._in_flight:
+            return True   # en vol : on s'arrete aux en-tetes (corps jamais lu)
+        if not buf.startswith(b"POST "):
+            return True   # GET / upgrade WS / autre verbe : pas de corps a attendre
+        return len(buf) >= sep + 4 + self._content_length(buf[:sep])
+
     def _drive_pending(self):
-        # Avance le handshake en cours en mode non bloquant, avec un budget
-        # temps strict pour ne jamais pénaliser la boucle d'acquisition.
+        # Avance la lecture de la requête en cours en mode non bloquant, avec un
+        # budget temps strict pour ne jamais pénaliser la boucle d'acquisition.
+        # Lit les en-têtes PUIS, pour un POST, les content_length octets de corps
+        # avant de dispatcher : le routeur reçoit une requête complète en mémoire.
         if self._pending is None:
             return
         cli, buf, deadline = self._pending
         slice_end = time.ticks_add(time.ticks_ms(), self._handshake_slice_ms)
 
-        while b"\r\n\r\n" not in buf and len(buf) < 2048:
-            # Sortie sur budget temps du slice OU deadline globale du handshake.
+        while not self._request_complete(buf):
+            # Sortie sur budget temps du slice : on reprendra au prochain appel.
             if time.ticks_diff(slice_end, time.ticks_ms()) <= 0:
                 self._pending = (cli, buf, deadline)
                 return
+            # Deadline globale atteinte.
             if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
+                if b"\r\n\r\n" in buf:
+                    # En-têtes complets mais corps incomplet : on dispatche quand
+                    # même pour laisser le routeur renvoyer un 400 propre.
+                    self._log("[TELEM] body timeout, dispatch partiel")
+                    break
                 self._log("[TELEM] handshake timeout, got:", buf[:80])
                 self._abort_pending()
                 return
@@ -318,7 +378,7 @@ class TelemetryWS:
                 return
             buf += chunk
 
-        # Headers complets reçus -> finalisation et bascule en client actif.
+        # Requête complète (ou corps timeout avec en-têtes complets) -> dispatch.
         self._pending = None
         if self._finalize_handshake(cli, buf):
             # Un nouveau client WS prend la place : on ferme l'eventuel

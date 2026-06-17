@@ -12,13 +12,6 @@
 # du materiel pedagogique trimballe en classe.
 
 import json
-import time
-
-try:
-    import errno
-    _EAGAIN = errno.EAGAIN
-except (ImportError, AttributeError):
-    _EAGAIN = 11
 
 from web import config_store
 from web import ground_cmd
@@ -106,33 +99,24 @@ def _current_config():
 # ---- HTTP helpers -------------------------------------------------------
 
 def _sendall(cli, data):
-    """Envoi complet sur socket non-bloquante : boucle sur EAGAIN avec
-    un petit yield. Indispensable pour l'index.html (~10 KB) qui sature
-    facilement le buffer TCP de la Pico W."""
+    """Envoi complet de la reponse HTTP. Le service HTTP n'a lieu QU'AU SOL :
+    en vol la telemetrie ferme toute requete HTTP (cf. TelemetryWS.mark_launched),
+    donc on met la socket en mode bloquant et on envoie simplement. Un eventuel
+    blocage ici (client lent, page ~10 Ko) n'impacte jamais la boucle de vol."""
+    try:
+        cli.setblocking(True)
+    except (OSError, AttributeError):
+        pass
     view = memoryview(data)
     n = len(view)
     off = 0
-    # Deadline globale : on n'attendra pas plus de 3 s pour cracher la
-    # reponse complete, sinon c'est que le client est mort.
-    deadline = time.ticks_add(time.ticks_ms(), 3000)
     while off < n:
         try:
             sent = cli.send(view[off:off + 1024])
-        except OSError as e:
-            err = getattr(e, "errno", None)
-            if err in (_EAGAIN, 11, 110, 116):
-                if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
-                    return False
-                time.sleep_ms(5)
-                continue
+        except OSError:
             return False
-        if sent is None:
-            # MicroPython renvoie parfois None quand send() bloquerait.
-            time.sleep_ms(5)
-            continue
-        if sent == 0:
-            time.sleep_ms(5)
-            continue
+        if not sent:   # 0 ou None : connexion fermee/anormale
+            return False
         off += sent
     return True
 
@@ -213,31 +197,18 @@ def _send_file_download(cli, path, filename):
 # ---- Lecture du body POST -----------------------------------------------
 
 def _read_body(cli, already, content_length):
-    """Lit content_length octets de body. `already` = ce qui etait deja
-    dans le buffer apres les headers. Lecture bloquante courte (operation
-    rare au sol). Retourne (bytes, error_or_None)."""
+    """Retourne (bytes, error_or_None). Le corps complet a deja ete bufferise
+    en amont par la couche telemetrie (lecture non bloquante par tranches) :
+    on se contente de ce qui est la, sans JAMAIS bloquer la boucle d'acquisition.
+    `already` = octets recus apres les en-tetes (= le corps complet en pratique)."""
     if content_length > 4096:
         return None, "body trop gros"
-    buf = already
-    if len(buf) >= content_length:
-        return buf[:content_length], None
-    try:
-        cli.setblocking(True)
-        cli.settimeout(0.5)
-    except (OSError, AttributeError):
-        pass
-    deadline = time.ticks_add(time.ticks_ms(), 1000)
-    while len(buf) < content_length:
-        if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
-            return None, "timeout lecture body"
-        try:
-            chunk = cli.recv(min(1024, content_length - len(buf)))
-        except OSError:
-            return None, "erreur reseau"
-        if not chunk:
-            return None, "connexion fermee"
-        buf += chunk
-    return buf[:content_length], None
+    if len(already) >= content_length:
+        return already[:content_length], None
+    # Ne devrait pas arriver : la telemetrie lit tout le corps avant de
+    # dispatcher. Si le corps est incomplet (timeout cote telemetrie), on
+    # refuse proprement plutot que de bloquer pour lire le reste.
+    return None, "body incomplet"
 
 
 # ---- Routage ------------------------------------------------------------
