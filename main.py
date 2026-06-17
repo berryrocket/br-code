@@ -266,33 +266,33 @@ def read_all_sensors():
         return (0.0,) * 13
 
     try:
-        pressure = _safe(baro.read_pressure())
-        temp     = _safe(baro.read_temperature())
+        pressure = baro.read_pressure()
+        temp     = baro.read_temperature()
         mx = my = mz = 0.0
         temp_imu = temp_mag = 0.0
 
         if PARAMS.SENSOR_BOARD == "10DOF_V1":
             ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
-            temp_imu = _safe(imu.read_temperature())
+            temp_imu = imu.read_temperature()
         elif PARAMS.SENSOR_BOARD == "10DOF_V2.1":
             ax, ay, az = imu.acceleration
             gx, gy, gz = imu.gyro
-            temp_imu   = _safe(imu.temperature)
+            temp_imu   = imu.temperature
         else:  # BR_MINI_SENSOR
             ax, ay, az, gx, gy, gz = imu.read_accelerometer_gyro()
-            temp_imu = _safe(imu.read_temperature())
+            temp_imu = imu.read_temperature()
             if mag is not None:
                 mx_raw, my_raw, mz_raw = mag.read_mag()
-                mx = _safe(mx_raw)
-                my = -_safe(my_raw)   # alignement axe Y du magnéto avec l'IMU
-                mz = _safe(mz_raw)
-                temp_mag = _safe(mag.read_temperature())
+                mx = mx_raw
+                my = -my_raw   # alignement axe Y du magnéto avec l'IMU
+                mz = mz_raw
+                temp_mag = mag.read_temperature()
 
-        return (pressure, temp,
+        return (_safe(pressure), _safe(temp),
                 _safe(ax), _safe(ay), _safe(az),
                 _safe(gx), _safe(gy), _safe(gz),
-                mx, my, mz,
-                temp_imu, temp_mag)
+                _safe(mx), _safe(my), _safe(mz),
+                _safe(temp_imu), _safe(temp_mag))
     except Exception as e:
         if PARAMS.DEBUG:
             print(f"[ERREUR] Lecture capteurs impossible: {e}")
@@ -496,6 +496,7 @@ def run_flight_loop(telem, cdns):
 #############################
 if __name__ == '__main__':
 
+    ####    Setup      ####
     if PARAMS.DEBUG:
         print_fs_info()
 
@@ -504,22 +505,19 @@ if __name__ == '__main__':
     time.sleep(0.2)
     set_buzzer(False)
 
-    # Cycle trappe parachute au démarrage (open → 3 s d'attente → close)
+    # Cycle trappe parachute au démarrage (open -> 3 s d'attente -> close)
     open_parachute()
     time.sleep(3)
     close_parachute()
 
     # Partage des fonctions de pilotage trappe avec le module ground_cmd
-    # pour les commandes web (sous armement). Source de vérité unique.
+    # pour les commandes web (sous armement). Source de vérité unique.        
     if parachute_servo is not None:
-        ground_cmd.setup(open_parachute, close_parachute,
-                         PARAMS.BUZZER_ENABLE,
-                         data_path=DATA_FILE,
-                         reset_data_fn=reset_data_file)
+        open_fn, close_fn = open_parachute, close_parachute
     else:
-        ground_cmd.setup(None, None, PARAMS.BUZZER_ENABLE,
-                         data_path=DATA_FILE,
-                         reset_data_fn=reset_data_file)
+        open_fn, close_fn = None, None
+    ground_cmd.setup(open_fn, close_fn, PARAMS.BUZZER_ENABLE,
+                    data_path=DATA_FILE, reset_data_fn=reset_data_file)
 
     init_board()
     telem, cdns = start_telemetry()
@@ -545,4 +543,5 @@ if __name__ == '__main__':
     # Son pré-décollage
     set_buzzer(PARAMS.BUZZER_ENABLE, freq=1000, tps=2)
 
+    ####    Loop      ####
     run_flight_loop(telem, cdns)

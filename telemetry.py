@@ -13,6 +13,10 @@ try:
 except (ImportError, AttributeError):
     _EAGAIN = 11  # MicroPython embarque parfois errno sans EAGAIN
 
+# Codes errno signifiant « rien à lire/écrire pour l'instant, réessaie plus
+# tard » sur une socket non bloquante (EAGAIN/EWOULDBLOCK et variantes).
+_WOULD_BLOCK = (_EAGAIN, 11, 110, 116)
+
 from lib.nectar import build_frame
 
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -364,7 +368,7 @@ class TelemetryWS:
                 chunk = cli.recv(512)
             except OSError as e:
                 err = getattr(e, "errno", None)
-                if err in (_EAGAIN, 11, 110, 116):
+                if err in _WOULD_BLOCK:
                     # Rien à lire pour l'instant : on rend la main et on
                     # reprendra au prochain appel send_telemetry().
                     self._pending = (cli, buf, deadline)
@@ -474,7 +478,7 @@ class TelemetryWS:
                     return
         except OSError as e:
             err = getattr(e, "errno", None)
-            if err not in (_EAGAIN, 11, 110, 116):
+            if err not in _WOULD_BLOCK:
                 self._log("[TELEM] recv error:", e)
                 self._drop_client()
                 return

@@ -26,6 +26,10 @@ try:
 except (ImportError, AttributeError):
     _EAGAIN = 11
 
+# Codes errno signifiant « rien à lire pour l'instant, réessaie plus tard »
+# sur une socket non bloquante (EAGAIN/EWOULDBLOCK et variantes).
+_WOULD_BLOCK = (_EAGAIN, 11, 110, 116)
+
 
 class CaptiveDNS:
     def __init__(self, ip, debug=False):
@@ -73,7 +77,7 @@ class CaptiveDNS:
                 data, addr = self._sock.recvfrom(512)
             except OSError as e:
                 err = getattr(e, "errno", None)
-                if err in (_EAGAIN, 11, 110, 116):
+                if err in _WOULD_BLOCK:
                     return  # rien a lire
                 self._log("[CDNS] recvfrom error:", e)
                 return
