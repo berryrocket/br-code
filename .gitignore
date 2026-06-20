@@ -4,3 +4,4 @@ debug.py
 .micropico
 *.pyc
 nectar/
+build/

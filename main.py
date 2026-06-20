@@ -184,7 +184,10 @@ def init_data_file():
         if DATA_FOLDER not in os.listdir():
             os.mkdir(DATA_FOLDER)
         _flight_file = open(DATA_FILE, "a", encoding="utf-8")
-        _write_header()
+        # On n'ecrit l'en-tete que si l'espace est suffisant : ecrire sur un
+        # FS plein declenche un GC LittleFS qui gele le CPU (cf write_flight_lines).
+        if not low_space_fs:
+            _write_header()
     except OSError as e:
         print(f"[ERREUR] Initialisation data_platform.txt impossible: {e}")
         print(get_free_space_bytes())
@@ -193,22 +196,44 @@ def reset_data_file():
     """Commande sol 'supprimer données' : ferme le handle, tronque le fichier
     (mode 'w'), réécrit l'en-tête et garde ouvert. Remplace le os.remove de
     ground_cmd pour que main reste seul propriétaire du handle."""
-    global _flight_file
+    global _flight_file, low_space_fs
     try:
         if _flight_file is not None:
             _flight_file.close()
     except OSError:
         pass
     _flight_file = None   # état propre si l'ouverture ci-dessous échoue
-    _flight_file = open(DATA_FILE, "w", encoding="utf-8")
-    _write_header()
+    _flight_file = open(DATA_FILE, "w", encoding="utf-8")  # troncature -> libère
+    # La troncature a libéré de l'espace : on lève le verrou si on repasse
+    # au-dessus du seuil, pour que l'enregistrement puisse reprendre.
+    free = get_free_space_bytes()
+    low_space_fs = (0 <= free < PARAMS.MIN_FREE_SPACE_BYTES)
+    if not low_space_fs:
+        _write_header()
 
 def write_flight_lines(lines):
     """Écrit des lignes dans le fichier de vol (handle déjà ouvert) puis flush().
     flush() commit le lot en flash : durabilité identique à l'ancien close()
     (au pire le dernier lot ~0,5 s est perdu sur une coupure d'alim). Renvoie
-    True si OK, False sinon."""
-    global _flight_file
+    True si OK, False sinon.
+
+    GARDE-FOU ESPACE : si l'espace libre est insuffisant, on N'ÉCRIT PLUS du
+    tout. Écrire sur un LittleFS presque plein déclenche un garbage-collect qui
+    efface des blocs flash, et pendant un effacement le CPU est gelé (XIP
+    suspendu) -> freezes périodiques à chaque flush. Une fois `low_space_fs`
+    verrouillé, on rend la main immédiatement (plus aucune activité flash)."""
+    global _flight_file, low_space_fs
+    # Si on sait déjà l'espace insuffisant : on ne touche plus à la flash.
+    if low_space_fs:
+        return False
+    # Vérif proactive (statvfs = lecture métadonnées, ne gèle pas) : on arrête
+    # AVANT que le FS ne soit si plein que le GC fige la carte à chaque écriture.
+    free = get_free_space_bytes()
+    if 0 <= free < PARAMS.MIN_FREE_SPACE_BYTES:
+        low_space_fs = True
+        if PARAMS.DEBUG:
+            print(f"[FS] espace insuffisant ({free} B) : arrêt des écritures")
+        return False
     try:
         if _flight_file is None:          # garde-fou : repart après une erreur
             _flight_file = open(DATA_FILE, "a", encoding="utf-8")
@@ -219,6 +244,7 @@ def write_flight_lines(lines):
     except OSError as e:
         if PARAMS.DEBUG:
             print(f"[ERREUR] Ecriture data_platform.txt impossible: {e}")
+        low_space_fs = True   # latch : probable disque plein -> on arrête d'écrire
         try:
             if _flight_file is not None:
                 _flight_file.close()
@@ -333,8 +359,9 @@ def print_debug(time_s, reading):
         print(f'Magnetometre:  X = {mx:.2f} , Y = {my:.2f} , Z = {mz:.2f}')
         print(f'Pressure:      P = {pressure:.2f} hPa')
         print(f'Temperature:   T = {temp:.2f} dC / IMU = {ti:.2f} dC / MAG = {tm:.2f} dC')
-    print(f'Acc contact:   {contact_fired:.1d}')
-    print(f'Samples ratés: {missed_samples:d}')
+    print(f'Acc contact:      {contact_fired:.1d}')
+    print(f'Samples ratés:    {missed_samples:d}')
+    print(f'Espace fs faible: {low_space_fs:d}')
 
 #############################
 ####  Setup procedures   ####
@@ -491,9 +518,11 @@ if __name__ == '__main__':
 
     init_board()
     telem, cdns = start_telemetry()
-    init_data_file()
 
-    # Vérification de l'espace libre pour un vol
+    # Vérification de l'espace libre AVANT toute écriture flash : si l'espace
+    # est insuffisant, low_space_fs verrouille les écritures (init_data_file
+    # n'écrira pas l'en-tête, write_flight_lines ne flushera pas) -> on évite
+    # les freezes du GC LittleFS sur un FS plein.
     free_bytes = get_free_space_bytes()
     if 0 <= free_bytes < PARAMS.MIN_FREE_SPACE_BYTES:
         low_space_fs = True
@@ -503,6 +532,8 @@ if __name__ == '__main__':
         # Son d'alerte dédié : grave et rapide, distinct des autres tonalités
         set_buzzer(PARAMS.BUZZER_ENABLE, freq=200, tps=0.25)
         time.sleep(3)
+
+    init_data_file()
 
     # Exécute les actions de la charge utile au démarrage de la carte
     run_payload(payload_on_boot, baro, imu)
