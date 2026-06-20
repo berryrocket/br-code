@@ -195,9 +195,11 @@ port**, told apart by the HTTP headers:
 - **HTTP** → the web page (`index.html`) and the JSON API (`/api/...`)
 - **WebSocket** → the live telemetry stream (Nectar frames)
 
-A tiny **captive DNS** on port 53 answers *every* domain with `192.168.4.1`. This
-triggers the "Sign in to network" pop-up on phones/laptops, so the web page
-**opens automatically** when you join the WiFi.
+A tiny **captive DNS** on port 53 answers the OS **captive-portal probe domains**
+(e.g. `captive.apple.com`, `connectivitycheck.gstatic.com`, `msftconnecttest.com`)
+with `192.168.4.1`. This triggers the "Sign in to network" pop-up, so the web page
+**opens automatically** when you join the WiFi. All other domains are left alone,
+so a laptop connected to both BerryRocket **and** a real WiFi keeps its internet.
 
 ### Connecting and going live
 

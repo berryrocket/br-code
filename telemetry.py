@@ -30,7 +30,6 @@ _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 # Total = 57 octets.
 _PAYLOAD_FMT = "<I13fB"
 
-
 class TelemetryWS:
     def __init__(self, ssid_prefix, open_network, password,
                  channel, port, ssid_type, apid, ssid_num=None,

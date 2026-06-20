@@ -14,7 +14,6 @@ import time
 from machine import Pin, PWM, Timer
 import parameters as PARAMS
 
-
 #############################
 ####  Hardware setup     ####
 #############################
@@ -34,7 +33,6 @@ _silence_timer = Timer()
 
 # Fréquence courante du bip (lue par _beep_on).
 _beep_freq_hz = 500
-
 
 #############################
 ####  Mélodie démarrage  ####
@@ -61,7 +59,6 @@ def play_startup_melody(enable=True):
 
     _buzzer_pwm.duty_u16(0)
 
-
 #############################
 ####  Bip périodique     ####
 #############################
@@ -71,11 +68,9 @@ def _beep_on(timer):
     _buzzer_pwm.duty_u16(32768)  # 50 %
     _silence_timer.init(freq=1.0 / 0.1, mode=Timer.ONE_SHOT, callback=_beep_off)
 
-
 def _beep_off(timer):
     """Callback du _silence_timer : coupe le bip."""
     _buzzer_pwm.duty_u16(0)
-
 
 def set_buzzer(enable=True, freq=500, tps=5.0):
     """Active le buzzer avec un bip de fréquence `freq` répété toutes les `tps` secondes.

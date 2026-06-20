@@ -20,13 +20,11 @@ from web.captive_dns import CaptiveDNS
 from web import ground_cmd
 import parameters as PARAMS
 
-
 #############################
 ####     Constants       ####
 #############################
 DATA_FOLDER = "data"
 DATA_FILE   = DATA_FOLDER + "/data_platform.txt"
-
 
 #############################
 ####  Hardware setup     ####
@@ -40,7 +38,6 @@ def setup_i2c():
     print("[ATTENTION] La carte mère sélectionnée n'est pas référencée !")
     print("            Changer les paramètres - Mise off de la carte par sécurité")
     exit(1)
-
 
 def setup_sensors(i2c):
     """Choisit les drivers capteurs selon SENSOR_BOARD. Retourne (baro, imu, mag)."""
@@ -63,7 +60,6 @@ def setup_sensors(i2c):
     PARAMS.SENSOR_BOARD = "BR_MINI_SENSOR"
     return baro, MPU9250(i2c=i2c), None
 
-
 def setup_parachute_servo():
     """Retourne le PWM du servomoteur de trappe, ou None si pas applicable."""
     if not PARAMS.EJECTION_CHARGE and PARAMS.MOTHER_BOARD == "BR_MINI_AVIONIC":
@@ -72,13 +68,11 @@ def setup_parachute_servo():
         return servo
     return None
 
-
 def setup_contact_pin():
     """Retourne la pin de l'accéléromètre contact, ou None si pas applicable."""
     if PARAMS.MOTHER_BOARD == "BR_MINI_AVIONIC":
         return Pin(28, Pin.IN)
     return None
-
 
 # Objets matériels (créés une seule fois au chargement du module)
 i2c             = setup_i2c()
@@ -87,7 +81,6 @@ parachute_servo = setup_parachute_servo()
 acc_contact_in  = setup_contact_pin()
 acq_timer       = Timer()
 rtc             = RTC()
-
 
 #############################
 ####     Flight state    ####
@@ -105,7 +98,6 @@ missed_samples  = 0      # nb de ticks d'acquisition non traités à temps (over
 # Fichier de données ouvert une seule fois au boot et gardé ouvert tout le vol.
 _flight_file    = None
 
-
 #############################
 ####     Tiny helpers    ####
 #############################
@@ -113,17 +105,14 @@ def open_parachute():
     if parachute_servo is not None:
         parachute_servo.duty_ns(PARAMS.SERVO_OPEN * 1000)
 
-
 def close_parachute():
     if parachute_servo is not None:
         parachute_servo.duty_ns(PARAMS.SERVO_CLOSE * 1000)
-
 
 def on_contact_rise(pin):
     """IRQ du contacteur d'accélération (front montant)."""
     global contact_fired
     contact_fired = True
-
 
 def on_acq_tick(timer):
     """Callback du timer d'acquisition à FREQ_ACQ Hz."""
@@ -135,7 +124,6 @@ def on_acq_tick(timer):
         missed_samples += 1
     is_sampling = True
 
-
 def get_free_space_bytes():
     """Espace libre du FS en octets. Renvoie -1 si indisponible.
     LittleFS peut renvoyer un f_bavail négatif en overcommit (FS saturé) :
@@ -146,7 +134,6 @@ def get_free_space_bytes():
         return free if free > 0 else 0
     except Exception:
         return -1
-
 
 def print_fs_info():
     """Affiche l'état du FS — diagnostic avant les écritures."""
@@ -167,7 +154,6 @@ def print_fs_info():
     except Exception as e:
         print(f"[FS] statvfs indisponible: {e}")
 
-
 def _build_header_lines():
     """Construit les lignes d'en-tête de mission du fichier de données."""
     modes = []
@@ -184,13 +170,11 @@ def _build_header_lines():
         "| gyro X [dps] | gyro Y [dps] | gyro Z [dps] | mag X [Gauss] | mag Y [Gauss] | mag Z [Gauss]\n",
     ]
 
-
 def _write_header():
     """Écrit l'en-tête de mission dans le fichier ouvert (+ flush)."""
     for line in _build_header_lines():
         _flight_file.write(line)
     _flight_file.flush()
-
 
 def init_data_file():
     """Boot : crée le dossier, ouvre data_platform.txt en append et écrit
@@ -205,7 +189,6 @@ def init_data_file():
         print(f"[ERREUR] Initialisation data_platform.txt impossible: {e}")
         print(get_free_space_bytes())
 
-
 def reset_data_file():
     """Commande sol 'supprimer données' : ferme le handle, tronque le fichier
     (mode 'w'), réécrit l'en-tête et garde ouvert. Remplace le os.remove de
@@ -219,7 +202,6 @@ def reset_data_file():
     _flight_file = None   # état propre si l'ouverture ci-dessous échoue
     _flight_file = open(DATA_FILE, "w", encoding="utf-8")
     _write_header()
-
 
 def write_flight_lines(lines):
     """Écrit des lignes dans le fichier de vol (handle déjà ouvert) puis flush().
@@ -245,14 +227,12 @@ def write_flight_lines(lines):
         _flight_file = None
         return False
 
-
 #############################
 ####   Sampling step     ####
 #############################
 def _safe(value):
     """Remplace None par 0.0 pour éviter de crasher si un capteur ne répond pas."""
     return 0.0 if value is None else value
-
 
 def read_all_sensors():
     """Lit baro + IMU (+ mag) et renvoie un tuple de 13 valeurs :
@@ -298,7 +278,6 @@ def read_all_sensors():
             print(f"[ERREUR] Lecture capteurs impossible: {e}")
         return (0.0,) * 13
 
-
 def detect_liftoff(ay):
     """Renvoie True si on doit déclencher le décollage à cet instant."""
     if launched:
@@ -307,11 +286,9 @@ def detect_liftoff(ay):
     contact_trigger = PARAMS.LIFTOFF_DET_CONTACT and contact_fired
     return imu_trigger or contact_trigger
 
-
 def detect_apogee(now_ms):
     """Renvoie True si on doit basculer en chute libre maintenant."""
     return launched and (not falling) and (now_ms - launch_time_ms > PARAMS.TIMEOUT_APOGEE)
-
 
 def format_data_line(time_s, reading):
     """Formate une ligne du fichier data_platform.txt."""
@@ -320,7 +297,6 @@ def format_data_line(time_s, reading):
             f"{ax:.2f} {ay:.2f} {az:.2f} "
             f"{gx:.2f} {gy:.2f} {gz:.2f} "
             f"{mx:.2f} {my:.2f} {mz:.2f}\n")
-
 
 def send_telemetry_frame(telem, time_s, reading):
     """Émet une trame Nectar via le WebSocket (silencieux si désactivé)."""
@@ -336,7 +312,6 @@ def send_telemetry_frame(telem, time_s, reading):
                          ax, ay, az, gx, gy, gz, mx, my, mz,
                          ti, tm, flags)
 
-
 def run_payload(func, *args):
     """Exécute un hook charge utile (code élève) sans jamais casser le vol.
     Si le code de cu.py lève une erreur, on l'ignore (log en DEBUG) pour que
@@ -346,7 +321,6 @@ def run_payload(func, *args):
     except Exception as e:
         if PARAMS.DEBUG:
             print(f"[ERREUR] charge utile: {e}")
-
 
 def print_debug(time_s, reading):
     """Affiche un récap console (mode DEBUG uniquement, non bloquant)."""
@@ -362,7 +336,6 @@ def print_debug(time_s, reading):
     print(f'Acc contact:   {contact_fired:.1d}')
     print(f'Samples ratés: {missed_samples:d}')
 
-
 #############################
 ####  Setup procedures   ####
 #############################
@@ -372,7 +345,6 @@ def init_board():
     if acc_contact_in is not None:
         acc_contact_in.irq(trigger=Pin.IRQ_RISING, handler=on_contact_rise)
     acq_timer.init(freq=PARAMS.FREQ_ACQ, mode=Timer.PERIODIC, callback=on_acq_tick)
-
 
 def start_telemetry():
     """Lance le serveur WebSocket Nectar + le DNS captif. Retourne (telem, cdns)."""
@@ -397,7 +369,6 @@ def start_telemetry():
     cdns = CaptiveDNS("192.168.4.1", debug=PARAMS.DEBUG)
     cdns.start()
     return telem, cdns
-
 
 #############################
 ####  Main flight loop   ####
@@ -490,7 +461,6 @@ def run_flight_loop(telem, cdns):
         if cdns is not None:
             cdns.poll()
 
-
 #############################
 ####    Entry point      ####
 #############################
@@ -511,7 +481,7 @@ if __name__ == '__main__':
     close_parachute()
 
     # Partage des fonctions de pilotage trappe avec le module ground_cmd
-    # pour les commandes web (sous armement). Source de vérité unique.        
+    # pour les commandes web (sous armement). Source de vérité unique.
     if parachute_servo is not None:
         open_fn, close_fn = open_parachute, close_parachute
     else:

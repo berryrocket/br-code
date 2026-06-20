@@ -12,6 +12,17 @@
 # du materiel pedagogique trimballe en classe.
 
 import json
+import time
+
+try:
+    import errno
+    _EAGAIN = errno.EAGAIN
+except (ImportError, AttributeError):
+    _EAGAIN = 11
+
+# Codes errno signifiant « buffer plein, reessaie plus tard » sur une socket
+# (EAGAIN/EWOULDBLOCK et variantes lwIP).
+_WOULD_BLOCK = (_EAGAIN, 11, 110, 116)
 
 from web import config_store
 from web import ground_cmd
@@ -99,24 +110,35 @@ def _current_config():
 # ---- HTTP helpers -------------------------------------------------------
 
 def _sendall(cli, data):
-    """Envoi complet de la reponse HTTP. Le service HTTP n'a lieu QU'AU SOL :
-    en vol la telemetrie ferme toute requete HTTP (cf. TelemetryWS.mark_launched),
-    donc on met la socket en mode bloquant et on envoie simplement. Un eventuel
-    blocage ici (client lent, page ~10 Ko) n'impacte jamais la boucle de vol."""
-    try:
-        cli.setblocking(True)
-    except (OSError, AttributeError):
-        pass
+    """Envoi complet de la reponse HTTP, tolerant a EAGAIN.
+
+    Indispensable : l'index.html (~10 Ko) sature le buffer d'envoi TCP de la
+    Pico W (lwIP), qui renvoie alors EAGAIN ; on attend un peu et on reessaie
+    plutot que d'abandonner (sinon la page n'est jamais envoyee en entier ->
+    le navigateur time out). Borne a 3 s pour un client mort.
+
+    Le service HTTP n'a lieu QU'AU SOL (en vol la telemetrie ferme toute
+    requete HTTP, cf. TelemetryWS.mark_launched), donc ce blocage eventuel
+    n'impacte jamais la boucle de vol."""
     view = memoryview(data)
     n = len(view)
     off = 0
+    deadline = time.ticks_add(time.ticks_ms(), 3000)
     while off < n:
         try:
             sent = cli.send(view[off:off + 1024])
-        except OSError:
+        except OSError as e:
+            if getattr(e, "errno", None) in _WOULD_BLOCK:
+                if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
+                    return False
+                time.sleep_ms(5)
+                continue
             return False
-        if not sent:   # 0 ou None : connexion fermee/anormale
-            return False
+        if not sent:   # None ou 0 : buffer plein, MicroPython demande de reessayer
+            if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
+                return False
+            time.sleep_ms(5)
+            continue
         off += sent
     return True
 

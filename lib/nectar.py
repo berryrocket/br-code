@@ -12,7 +12,6 @@ SSID_MF      = 1
 SSID_BALLOON = 2
 SSID_OTHER   = 3
 
-
 def crc16_ccitt(data, poly=0x1021, init=0xFFFF):
     """CRC16-CCITT (poly=0x1021, init=0xFFFF, no reflection) over the given bytes."""
     crc = init
@@ -25,7 +24,6 @@ def crc16_ccitt(data, poly=0x1021, init=0xFFFF):
                 crc <<= 1
             crc &= 0xFFFF
     return crc
-
 
 def build_frame(ssid_type, ssid_num, apid, payload):
     """Assemble a Nectar frame:

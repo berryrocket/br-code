@@ -33,7 +33,6 @@ _reset_data_fn = None        # callable() -> vide + reinitialise le fichier data
 _buzzer_on     = True
 _data_path     = "data/data_platform.txt"
 
-
 def setup(open_fn, close_fn, buzzer_enabled, data_path=None, reset_data_fn=None):
     """Appele par main.py au boot. open_fn / close_fn sont les fonctions
     de pilotage de la trappe (typiquement open_parachute / close_parachute
@@ -53,31 +52,25 @@ def setup(open_fn, close_fn, buzzer_enabled, data_path=None, reset_data_fn=None)
     if data_path is not None:
         _data_path = data_path
 
-
 def has_servo():
     """True si l'avionique a un servomoteur de trappe pilotable."""
     return _open_fn is not None and _close_fn is not None
-
 
 def is_armed():
     """True si l'avionique est en mode sol (commandes acceptees)."""
     return _armed
 
-
 def is_in_flight():
     """True des que le decollage a ete detecte (verrouille les commandes sol)."""
     return _in_flight
-
 
 def can_arm():
     """Armement possible UNIQUEMENT au sol, avant decollage."""
     return (not _in_flight) and has_servo()
 
-
 def data_path():
     """Chemin du fichier de donnees a telecharger / supprimer."""
     return _data_path
-
 
 def lock_after_liftoff():
     """Appele par main.py des que le decollage est detecte. Verrouille
@@ -86,7 +79,6 @@ def lock_after_liftoff():
     _in_flight = True
     if _armed:
         disarm()
-
 
 def arm():
     """Active le mode sol. Retourne True si OK."""
@@ -98,7 +90,6 @@ def arm():
     set_buzzer(_buzzer_on, freq=_TONE_ARMED_FREQ, tps=_TONE_ARMED_TPS)
     return True
 
-
 def disarm():
     """Desactive le mode sol et restaure le ton pre-decollage."""
     global _armed
@@ -108,7 +99,6 @@ def disarm():
     if not _in_flight:
         set_buzzer(_buzzer_on, freq=_TONE_PRELAUNCH_FREQ, tps=_TONE_PRELAUNCH_TPS)
 
-
 def open_trap():
     """Ouvre la trappe parachute. Refuse si non arme ou en vol."""
     if _in_flight or not _armed or _open_fn is None:
@@ -116,14 +106,12 @@ def open_trap():
     _open_fn()
     return True
 
-
 def close_trap():
     """Ferme la trappe parachute. Refuse si non arme ou en vol."""
     if _in_flight or not _armed or _close_fn is None:
         return False
     _close_fn()
     return True
-
 
 def delete_data():
     """Vide le fichier de donnees et le re-initialise (entete fraiche) via le

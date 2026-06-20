@@ -33,12 +33,10 @@ ALLOWED_KEYS = (
     "TELEMETRY_SSID_NUM",
 )
 
-
 def _filter(d):
     if not isinstance(d, dict):
         return {}
     return {k: d[k] for k in d if k in ALLOWED_KEYS}
-
 
 def load():
     """Retourne le dict d'overlay, {} si fichier absent ou JSON invalide.
@@ -49,7 +47,6 @@ def load():
     except (OSError, ValueError):
         return {}
     return _filter(raw)
-
 
 def save(d):
     """Ecriture atomique : ecrit dans .tmp puis rename. Une coupure
@@ -65,7 +62,6 @@ def save(d):
         pass
     os.rename(_TMP_PATH, _CONFIG_PATH)
     return clean
-
 
 def reset():
     """Supprime l'overlay -> retour aux defauts au prochain boot."""

@@ -1,9 +1,9 @@
 ########################################
 #### BerryRocket ####
-# Mini serveur DNS menteur : repond a TOUTES les requetes A avec l'IP
-# de l'AP. Permet aux sondes captive-portal des OS d'aboutir chez nous,
-# l'OS bascule en "captive portal detected" et ouvre automatiquement
-# notre page web a la connexion au wifi.
+# Mini serveur DNS captif "intelligent" : ne ment (reponse -> IP de l'AP)
+# QUE pour les domaines de sonde captive-portal des OS (cf. _CAPTIVE_PROBES).
+# Cela suffit a faire basculer l'OS en "captive portal detected" et a ouvrir
+# automatiquement la page web a la connexion au wifi.
 # Louis Barbier
 # Licence CC-BY-NC-SA
 ########################################
@@ -11,12 +11,10 @@
 # Non-bloquant : poll() est appelee depuis main.py a 20 Hz, lit ce qui
 # trainait sur le socket UDP 53 et repond. Charge negligeable.
 #
-# /!\ Cas du PC multi-homed (connecte simultanement a un vrai wifi ET
-# a l'AP BerryRocket) : tant que la fenetre BerryRocket est ouverte,
-# les resolutions DNS qui passent par notre interface seront menties.
-# Windows et macOS gerent ca avec un resolveur multi-interface qui
-# privilegie l'interface avec internet ; en pratique l'impact sur la
-# navigation reste limite.
+# PC multi-homed (connecte a la fois a un vrai wifi ET a l'AP BerryRocket) :
+# comme on ne detourne QUE les domaines de sonde, tous les autres noms
+# (google.com, etc.) ne sont pas mentis -> ils sont resolus par l'interface
+# internet et la navigation reste fonctionnelle.
 
 import socket
 
@@ -30,6 +28,24 @@ except (ImportError, AttributeError):
 # sur une socket non bloquante (EAGAIN/EWOULDBLOCK et variantes).
 _WOULD_BLOCK = (_EAGAIN, 11, 110, 116)
 
+# Domaines de "sonde captive" interroges par les OS pour detecter un portail.
+# On ne ment (reponse -> 192.168.4.1) QUE pour ceux-ci, afin de declencher le
+# pop-up d'ouverture de la page. Tout autre domaine n'est PAS detourne : sa
+# resolution passe par l'interface internet, ce qui preserve le net d'un PC
+# connecte a la fois a un vrai WiFi et a l'AP BerryRocket.
+# C'est une liste blanche : un nouveau domaine de sonde absent de la liste ne
+# declenchera pas le pop-up sur cet appareil, mais ne cassera jamais internet.
+_CAPTIVE_PROBES = (
+    b"connectivitycheck",     # Android
+    b"clients3.google",       # Android
+    b"gstatic",               # Android (connectivitycheck.gstatic.com)
+    b"captive.apple",         # iOS / macOS
+    b"msftconnecttest",       # Windows
+    b"msftncsi",              # Windows (ancien)
+    b"detectportal.firefox",  # Firefox
+    b"nmcheck.gnome",         # GNOME / Linux
+    b"network-test",          # divers (network-test.debian.org...)
+)
 
 class CaptiveDNS:
     def __init__(self, ip, debug=False):
@@ -120,10 +136,11 @@ class CaptiveDNS:
         if qdcount < 1:
             return None
 
-        # Parse la section Question : on a juste besoin de la fin du
-        # QNAME pour situer QTYPE / QCLASS et copier la section dans la
-        # reponse. Le nom precis ne nous interesse pas : on ment partout.
+        # Parse la section Question : on reconstruit le nom de domaine (labels
+        # separes par des points) pour decider si on le detourne, et on situe
+        # QTYPE / QCLASS juste apres le QNAME.
         off = 12
+        labels = []
         while off < len(query):
             label_len = query[off]
             if label_len == 0:
@@ -132,14 +149,22 @@ class CaptiveDNS:
             if (label_len & 0xC0) != 0:
                 # Compression dans une Question : tres rare, on ignore.
                 return None
+            labels.append(query[off + 1:off + 1 + label_len])
             off += 1 + label_len
             if off > len(query):
                 return None
+        name = b".".join(labels).lower()
         if off + 4 > len(query):
             return None
         qtype  = (query[off] << 8) | query[off + 1]
         qclass = (query[off + 2] << 8) | query[off + 3]
         question_end = off + 4
+
+        # On ne detourne QUE les domaines de sonde captive : pour tout autre
+        # nom, on ne repond pas (return None). Sur un PC multi-WiFi, ces noms
+        # sont alors resolus par l'interface internet -> internet preserve.
+        if not any(probe in name for probe in _CAPTIVE_PROBES):
+            return None
 
         # Flags de reponse : QR=1, AA=1, RD copie de la requete, RA=1, RCODE=0
         rd = (query[2] & 0x01)
